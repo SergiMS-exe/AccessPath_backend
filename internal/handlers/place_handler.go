@@ -6,6 +6,7 @@ import (
 
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,18 +21,17 @@ func NewPlaceHandler(service *services.PlaceService) *PlaceHandler {
 
 func (h *PlaceHandler) GetAll(c *gin.Context) {
 	filters := models.PlaceFilters{
-		City:   c.Query("city"),
 		Limit:  parseIntOrDefault(c.Query("limit"), 20),
 		Offset: parseIntOrDefault(c.Query("offset"), 0),
 	}
 
 	places, err := h.service.GetAll(c.Request.Context(), filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch places"})
+		response.InternalError(c, "Failed to fetch places")
 		return
 	}
 
-	c.JSON(http.StatusOK, places)
+	response.OK(c, places)
 }
 
 func (h *PlaceHandler) GetByBounds(c *gin.Context) {
@@ -45,11 +45,11 @@ func (h *PlaceHandler) GetByBounds(c *gin.Context) {
 
 	places, err := h.service.GetByBounds(c.Request.Context(), filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch places"})
+		response.InternalError(c, "Failed to fetch places")
 		return
 	}
 
-	c.JSON(http.StatusOK, places)
+	response.OK(c, places)
 }
 
 func (h *PlaceHandler) GetNearby(c *gin.Context) {
@@ -63,64 +63,77 @@ func (h *PlaceHandler) GetNearby(c *gin.Context) {
 
 	places, err := h.service.GetNearby(c.Request.Context(), filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch places"})
+		response.InternalError(c, "Failed to fetch places")
 		return
 	}
 
-	c.JSON(http.StatusOK, places)
+	response.OK(c, places)
 }
 
+// GetByID returns the place detail including its rating cache.
 func (h *PlaceHandler) GetByID(c *gin.Context) {
-	id := c.Param("id")
-
-	place, err := h.service.GetByID(c.Request.Context(), id)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Place not found"})
+		response.BadRequest(c, "Invalid place ID")
 		return
 	}
 
-	c.JSON(http.StatusOK, place)
+	detail, err := h.service.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "Place not found")
+		return
+	}
+
+	response.OK(c, detail)
 }
 
 func (h *PlaceHandler) Create(c *gin.Context) {
 	var req models.CreatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
 	place, err := h.service.Create(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create place"})
+		response.InternalError(c, "Failed to create place")
 		return
 	}
 
-	c.JSON(http.StatusCreated, place)
+	c.JSON(http.StatusCreated, response.Wrap(place))
 }
 
 func (h *PlaceHandler) Update(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid place ID")
+		return
+	}
 
-	var req models.CreatePlaceRequest
+	var req models.UpdatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
 	place, err := h.service.Update(c.Request.Context(), id, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update place"})
+		response.InternalError(c, "Failed to update place")
 		return
 	}
 
-	c.JSON(http.StatusOK, place)
+	response.OK(c, place)
 }
 
 func (h *PlaceHandler) Delete(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid place ID")
+		return
+	}
 
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete place"})
+		response.InternalError(c, "Failed to delete place")
 		return
 	}
 

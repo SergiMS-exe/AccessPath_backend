@@ -2,34 +2,34 @@ package models
 
 import "time"
 
-type FeatureReview struct {
-	ID        string    `json:"id"`
-	PlaceID   string    `json:"place_id"`
-	UserID    string    `json:"user_id"`
-	FeatureID int32     `json:"feature_id"`
-	Rating    int32     `json:"rating"`
-	Comment   *string   `json:"comment,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+type Review struct {
+	ID        int64      `json:"id"`
+	Code      string     `json:"code"`
+	UserID    int64      `json:"user_id"`
+	PlaceID   int64      `json:"place_id"`
+	Comment   *string    `json:"comment,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
-type FeatureReviewWithDetails struct {
-	FeatureReview
-	UserName    string `json:"user_name"`
-	FeatureName string `json:"feature_name"`
+type ReviewWithDetails struct {
+	Review
+	Username string `json:"username"`
 }
 
+// RatingInput is a single subcategory score submitted as part of a review.
+type RatingInput struct {
+	SubcategoryID int64 `json:"subcategory_id" binding:"required"`
+	Score         int   `json:"score" binding:"required,min=1,max=5"`
+}
+
+// CreateReviewRequest is the full payload for POST /reviews.
+// Photos are base64-encoded image strings; ratings are upserted atomically.
 type CreateReviewRequest struct {
-	UserID    string  `json:"user_id" binding:"required"`
-	FeatureID int32   `json:"feature_id" binding:"required"`
-	Rating    int32   `json:"rating" binding:"required,min=1,max=5"`
-	Comment   *string `json:"comment"`
-}
-
-type FeatureAverage struct {
-	FeatureID   int32   `json:"feature_id"`
-	FeatureName string  `json:"feature_name"`
-	CategoryID  int32   `json:"category_id"`
-	AverageRate float64 `json:"average_rate"`
-	TotalVotes  int     `json:"total_votes"`
+	PlaceID int64         `json:"place_id" binding:"required"`
+	UserID  int64         `json:"user_id" binding:"required"`
+	Comment *string       `json:"comment"`
+	Ratings []RatingInput `json:"ratings"`
+	Photos  []string      `json:"photos"` // base64-encoded image data
 }

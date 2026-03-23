@@ -3,17 +3,17 @@ package models
 import "time"
 
 type Place struct {
-	ID            string    `json:"id"`
-	GooglePlaceID *string   `json:"google_place_id,omitempty"`
-	Name          string    `json:"name"`
-	Address       *string   `json:"address,omitempty"`
-	City          *string   `json:"city,omitempty"`
-	Country       *string   `json:"country,omitempty"`
-	Latitude      float64   `json:"latitude"`
-	Longitude     float64   `json:"longitude"`
-	PlaceType     *string   `json:"place_type,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID          int64      `json:"id"`
+	Code        string     `json:"code"`
+	Name        string     `json:"name"`
+	Address     *string    `json:"address,omitempty"`
+	Latitude    float64    `json:"latitude"`
+	Longitude   float64    `json:"longitude"`
+	Description *string    `json:"description,omitempty"`
+	CreatedBy   int64      `json:"created_by"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
 }
 
 type PlaceWithDistance struct {
@@ -21,19 +21,30 @@ type PlaceWithDistance struct {
 	Distance float64 `json:"distance"`
 }
 
+// PlaceDetail is returned by GET /places/:id and embeds the rating cache.
+type PlaceDetail struct {
+	Place
+	Ratings []CategoryRating `json:"ratings"`
+}
+
 type CreatePlaceRequest struct {
-	GooglePlaceID *string `json:"google_place_id"`
-	Name          string  `json:"name" binding:"required"`
-	Address       *string `json:"address"`
-	City          *string `json:"city"`
-	Country       *string `json:"country"`
-	Latitude      float64 `json:"latitude" binding:"required"`
-	Longitude     float64 `json:"longitude" binding:"required"`
-	PlaceType     *string `json:"place_type"`
+	Name        string  `json:"name" binding:"required"`
+	Address     *string `json:"address"`
+	Latitude    float64 `json:"latitude" binding:"required"`
+	Longitude   float64 `json:"longitude" binding:"required"`
+	Description *string `json:"description"`
+	CreatedBy   int64   `json:"created_by" binding:"required"`
+}
+
+type UpdatePlaceRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	Address     *string `json:"address"`
+	Latitude    float64 `json:"latitude" binding:"required"`
+	Longitude   float64 `json:"longitude" binding:"required"`
+	Description *string `json:"description"`
 }
 
 type PlaceFilters struct {
-	City   string
 	Limit  int
 	Offset int
 }

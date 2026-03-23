@@ -1,83 +1,117 @@
 -- DDL (Data Definition Language) - Schema definitions
 
--- Users table
+-- Users
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
+    id            BIGSERIAL PRIMARY KEY,
+    code          UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    username      VARCHAR(100) NOT NULL,
+    email         VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at    TIMESTAMPTZ
 );
 
--- Feature categories (fixed: Física, Sensorial, Psíquica)
-CREATE TABLE IF NOT EXISTS feature_categories (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(50) UNIQUE NOT NULL,
-    description TEXT,
-    icon VARCHAR(50)
+-- Categories (accesibilidad: Física, Sensorial, Psíquica…)
+CREATE TABLE IF NOT EXISTS categories (
+    id            BIGSERIAL PRIMARY KEY,
+    code          UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    name          VARCHAR(100) NOT NULL,
+    slug          VARCHAR(100) NOT NULL UNIQUE,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Accessibility features (admin-managed)
-CREATE TABLE IF NOT EXISTS accessibility_features (
-    id SERIAL PRIMARY KEY,
-    category_id INTEGER REFERENCES feature_categories(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    icon VARCHAR(50),
-    UNIQUE(category_id, name)
+-- Subcategories (características concretas de cada categoría)
+CREATE TABLE IF NOT EXISTS subcategories (
+    id            BIGSERIAL PRIMARY KEY,
+    code          UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    category_id   BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    name          VARCHAR(100) NOT NULL,
+    slug          VARCHAR(100) NOT NULL UNIQUE,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Places
 CREATE TABLE IF NOT EXISTS places (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    google_place_id VARCHAR(255) UNIQUE,
-    name VARCHAR(255) NOT NULL,
-    address TEXT,
-    city VARCHAR(100),
-    country VARCHAR(100),
-    latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(11, 8) NOT NULL,
-    place_type VARCHAR(50),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    id          BIGSERIAL PRIMARY KEY,
+    code        UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    name        VARCHAR(255) NOT NULL,
+    address     TEXT,
+    latitude    DOUBLE PRECISION NOT NULL,
+    longitude   DOUBLE PRECISION NOT NULL,
+    description TEXT,
+    created_by  BIGINT NOT NULL REFERENCES users(id),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at  TIMESTAMPTZ
 );
 
--- Feature reviews (users rate features on places)
-CREATE TABLE IF NOT EXISTS feature_reviews (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    place_id UUID REFERENCES places(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    feature_id INTEGER REFERENCES accessibility_features(id) ON DELETE CASCADE,
-    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-    comment TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(place_id, user_id, feature_id)
+-- Collections (listas de lugares guardados por el usuario)
+CREATE TABLE IF NOT EXISTS collections (
+    id         BIGSERIAL PRIMARY KEY,
+    code       UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       VARCHAR(100) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
 );
 
--- User saved places (favorites)
-CREATE TABLE IF NOT EXISTS user_saved_places (
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    place_id UUID REFERENCES places(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (user_id, place_id)
+-- Collection places (pivot)
+CREATE TABLE IF NOT EXISTS collection_places (
+    collection_id BIGINT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    place_id      BIGINT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+    added_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (collection_id, place_id)
 );
 
--- Photos
-CREATE TABLE IF NOT EXISTS photos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    place_id UUID REFERENCES places(id) ON DELETE CASCADE,
-    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    url TEXT NOT NULL,
-    caption TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+-- Reviews
+CREATE TABLE IF NOT EXISTS reviews (
+    id         BIGSERIAL PRIMARY KEY,
+    code       UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    place_id   BIGINT NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+    comment    TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+
+-- Review photos
+CREATE TABLE IF NOT EXISTS review_photos (
+    id         BIGSERIAL PRIMARY KEY,
+    code       UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    review_id  BIGINT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    url        TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+);
+
+-- Review ratings (una puntuación por subcategoría y reseña)
+CREATE TABLE IF NOT EXISTS review_ratings (
+    review_id      BIGINT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    subcategory_id BIGINT NOT NULL REFERENCES subcategories(id) ON DELETE CASCADE,
+    score          INT NOT NULL CHECK (score >= 1 AND score <= 5),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (review_id, subcategory_id)
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_places_location ON places(latitude, longitude);
-CREATE INDEX IF NOT EXISTS idx_places_city ON places(city);
-CREATE INDEX IF NOT EXISTS idx_feature_reviews_place ON feature_reviews(place_id);
-CREATE INDEX IF NOT EXISTS idx_feature_reviews_user ON feature_reviews(user_id);
-CREATE INDEX IF NOT EXISTS idx_photos_place ON photos(place_id);
+CREATE INDEX IF NOT EXISTS idx_places_created_by     ON places(created_by);
+CREATE INDEX IF NOT EXISTS idx_places_location        ON places(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_places_deleted_at      ON places(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_collections_user_id    ON collections(user_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_place_id       ON reviews(place_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_id        ON reviews(user_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_deleted_at     ON reviews(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_review_photos_review   ON review_photos(review_id);
+CREATE INDEX IF NOT EXISTS idx_review_ratings_review  ON review_ratings(review_id);
+CREATE INDEX IF NOT EXISTS idx_subcategories_category ON subcategories(category_id);

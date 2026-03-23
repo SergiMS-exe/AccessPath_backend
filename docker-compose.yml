@@ -1,0 +1,62 @@
+version: "3.9"
+
+# Para desarrollo local: levanta solo la infraestructura (BD + caché).
+# El servidor Go corre en tu máquina con: air
+#
+# Para levantar todo en Docker (producción/staging):
+#   docker compose --profile full up --build
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: accesspath_db
+    environment:
+      POSTGRES_USER: accesspath
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: accesspath_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/ddl.sql:/docker-entrypoint-initdb.d/01_ddl.sql
+      - ./db/dml.sql:/docker-entrypoint-initdb.d/02_dml.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U accesspath -d accesspath_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: accesspath_cache
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Servicio opcional: solo se levanta con --profile full
+  api:
+    profiles: ["full"]
+    build: .
+    container_name: accesspath_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://accesspath:secret@postgres:5432/accesspath_db?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: cambia-esto-en-produccion
+      ENV: production
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:

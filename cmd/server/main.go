@@ -1,58 +1,89 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"accesspath/internal/app"
 	"accesspath/internal/config"
-	"accesspath/internal/handlers"
-	"accesspath/internal/repositories"
 	"accesspath/internal/routes"
-	"accesspath/internal/services"
 	"accesspath/pkg/database"
-
-	"github.com/gin-gonic/gin"
+	"accesspath/pkg/storage"
 )
 
 func main() {
-	// Load configuration
+	// 1. Cargar configuración
 	cfg := config.Load()
 
-	// Initialize database
+	// 2. Conectar a PostgreSQL
 	db, err := database.NewPostgresConnection(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("no se pudo conectar a la base de datos: %v", err)
 	}
 	defer db.Close()
-	log.Println("Connected to database")
+	log.Println("Conectado a PostgreSQL")
 
-	// Initialize repositories
-	placeRepo := repositories.NewPlaceRepository(db)
-	featureRepo := repositories.NewFeatureRepository(db)
-	reviewRepo := repositories.NewReviewRepository(db)
-	userRepo := repositories.NewUserRepository(db)
+	// 3. Conectar a Redis (opcional, puede ser nil)
+	cache := database.NewRedisClient(cfg.RedisURL)
+	if cache != nil {
+		defer cache.Close()
+	}
 
-	// Initialize services
-	placeService := services.NewPlaceService(placeRepo)
-	featureService := services.NewFeatureService(featureRepo)
-	reviewService := services.NewReviewService(reviewRepo)
-	userService := services.NewUserService(userRepo)
+	// 4. Conectar a MinIO
+	minioClient, err := storage.NewMinioClient(
+		cfg.MinioEndpoint,
+		cfg.MinioAccessKey,
+		cfg.MinioSecretKey,
+		cfg.MinioUseSSL,
+	)
+	if err != nil {
+		log.Fatalf("no se pudo conectar a MinIO: %v", err)
+	}
+	if err := storage.EnsureBucket(context.Background(), minioClient, cfg.MinioBucket); err != nil {
+		log.Fatalf("error al verificar bucket MinIO: %v", err)
+	}
+	log.Println("Conectado a MinIO")
 
-	// Initialize handlers
-	placeHandler := handlers.NewPlaceHandler(placeService)
-	featureHandler := handlers.NewFeatureHandler(featureService)
-	reviewHandler := handlers.NewReviewHandler(reviewService)
-	userHandler := handlers.NewUserHandler(userService)
+	// 5. Inicializar handlers (repos + servicios + handlers)
+	h := app.BuildHandlers(db, minioClient, cfg.MinioBucket)
 
-	// Initialize Gin
-	r := gin.Default()
+	// 6. Montar router
+	r := routes.Setup(h, cache, cfg)
 
-	// Register routes
-	routes.RegisterPlaceRoutes(r, placeHandler, reviewHandler)
-	routes.RegisterFeatureRoutes(r, featureHandler)
-	routes.RegisterUserRoutes(r, userHandler)
-	routes.RegisterHealthRoutes(r)
+	// 7. Configurar servidor HTTP
+	srv := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
 
-	// Start server
-	log.Printf("Server starting on port %s", cfg.Port)
-	r.Run(":" + cfg.Port)
+	// 8. Arrancar en goroutine para graceful shutdown
+	go func() {
+		log.Printf("servidor arrancado en el puerto %s", cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("error al arrancar el servidor: %v", err)
+		}
+	}()
+
+	// 9. Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("apagando servidor...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("error en el shutdown: %v", err)
+	}
+
+	log.Println("servidor apagado correctamente")
 }

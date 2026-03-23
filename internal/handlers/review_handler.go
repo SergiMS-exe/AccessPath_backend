@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,43 +20,48 @@ func NewReviewHandler(service *services.ReviewService) *ReviewHandler {
 }
 
 func (h *ReviewHandler) GetByPlace(c *gin.Context) {
-	placeID := c.Param("id")
+	placeID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid place ID")
+		return
+	}
 
 	reviews, err := h.service.GetByPlace(c.Request.Context(), placeID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch reviews"})
+		response.InternalError(c, "Failed to fetch reviews")
 		return
 	}
 
-	c.JSON(http.StatusOK, reviews)
-}
-
-func (h *ReviewHandler) GetPlaceAccessibility(c *gin.Context) {
-	placeID := c.Param("id")
-
-	averages, err := h.service.GetPlaceAccessibility(c.Request.Context(), placeID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch accessibility info"})
-		return
-	}
-
-	c.JSON(http.StatusOK, averages)
+	response.OK(c, reviews)
 }
 
 func (h *ReviewHandler) Create(c *gin.Context) {
-	placeID := c.Param("id")
-
 	var req models.CreateReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
-	review, err := h.service.Create(c.Request.Context(), placeID, req)
+	review, err := h.service.Create(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.InternalError(c, "Failed to create review")
 		return
 	}
 
-	c.JSON(http.StatusCreated, review)
+	c.JSON(http.StatusCreated, response.Wrap(review))
+}
+
+func (h *ReviewHandler) Delete(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid review ID")
+		return
+	}
+
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "Failed to delete review")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }

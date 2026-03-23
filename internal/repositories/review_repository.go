@@ -5,6 +5,7 @@ import (
 
 	"accesspath/internal/models"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,78 +17,85 @@ func NewReviewRepository(db *pgxpool.Pool) *ReviewRepository {
 	return &ReviewRepository{db: db}
 }
 
-func (r *ReviewRepository) FindByPlace(ctx context.Context, placeID string) ([]models.FeatureReviewWithDetails, error) {
-	query := `SELECT fr.id, fr.place_id, fr.user_id, fr.feature_id, fr.rating, fr.comment, fr.created_at, fr.updated_at,
-			  u.name as user_name, af.name as feature_name
-			  FROM feature_reviews fr
-			  JOIN users u ON fr.user_id = u.id
-			  JOIN accessibility_features af ON fr.feature_id = af.id
-			  WHERE fr.place_id = $1
-			  ORDER BY fr.created_at DESC`
-
-	rows, err := r.db.Query(ctx, query, placeID)
+func (r *ReviewRepository) FindByPlace(ctx context.Context, placeID int64) ([]models.ReviewWithDetails, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT rv.id, rv.code, rv.user_id, rv.place_id, rv.comment, rv.created_at, rv.updated_at, rv.deleted_at,
+		        u.username
+		 FROM reviews rv
+		 JOIN users u ON rv.user_id = u.id
+		 WHERE rv.place_id = $1 AND rv.deleted_at IS NULL
+		 ORDER BY rv.created_at DESC`, placeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var reviews []models.FeatureReviewWithDetails
+	var reviews []models.ReviewWithDetails
 	for rows.Next() {
-		var rev models.FeatureReviewWithDetails
-		if err := rows.Scan(&rev.ID, &rev.PlaceID, &rev.UserID, &rev.FeatureID, &rev.Rating, &rev.Comment, &rev.CreatedAt, &rev.UpdatedAt, &rev.UserName, &rev.FeatureName); err != nil {
+		var rv models.ReviewWithDetails
+		if err := rows.Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
+			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt, &rv.Username); err != nil {
 			return nil, err
 		}
-		reviews = append(reviews, rev)
+		reviews = append(reviews, rv)
 	}
-
 	return reviews, nil
 }
 
-func (r *ReviewRepository) GetPlaceAverages(ctx context.Context, placeID string) ([]models.FeatureAverage, error) {
-	query := `SELECT af.id, af.name, af.category_id,
-			  COALESCE(AVG(fr.rating), 0) as average_rate,
-			  COUNT(fr.id) as total_votes
-			  FROM accessibility_features af
-			  LEFT JOIN feature_reviews fr ON af.id = fr.feature_id AND fr.place_id = $1
-			  GROUP BY af.id, af.name, af.category_id
-			  ORDER BY af.category_id, af.id`
-
-	rows, err := r.db.Query(ctx, query, placeID)
+func (r *ReviewRepository) FindByUser(ctx context.Context, userID int64) ([]models.Review, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, code, user_id, place_id, comment, created_at, updated_at, deleted_at
+		 FROM reviews
+		 WHERE user_id = $1 AND deleted_at IS NULL
+		 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var averages []models.FeatureAverage
+	var reviews []models.Review
 	for rows.Next() {
-		var avg models.FeatureAverage
-		if err := rows.Scan(&avg.FeatureID, &avg.FeatureName, &avg.CategoryID, &avg.AverageRate, &avg.TotalVotes); err != nil {
+		var rv models.Review
+		if err := rows.Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
+			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt); err != nil {
 			return nil, err
 		}
-		averages = append(averages, avg)
+		reviews = append(reviews, rv)
 	}
-
-	return averages, nil
+	return reviews, nil
 }
 
-func (r *ReviewRepository) Create(ctx context.Context, placeID string, req models.CreateReviewRequest) (*models.FeatureReview, error) {
-	query := `INSERT INTO feature_reviews (place_id, user_id, feature_id, rating, comment)
-			  VALUES ($1, $2, $3, $4, $5)
-			  ON CONFLICT (place_id, user_id, feature_id)
-			  DO UPDATE SET rating = $4, comment = $5, updated_at = NOW()
-			  RETURNING id, place_id, user_id, feature_id, rating, comment, created_at, updated_at`
-
-	var rev models.FeatureReview
-	err := r.db.QueryRow(ctx, query, placeID, req.UserID, req.FeatureID, req.Rating, req.Comment).
-		Scan(&rev.ID, &rev.PlaceID, &rev.UserID, &rev.FeatureID, &rev.Rating, &rev.Comment, &rev.CreatedAt, &rev.UpdatedAt)
+func (r *ReviewRepository) FindByID(ctx context.Context, id int64) (*models.Review, error) {
+	var rv models.Review
+	err := r.db.QueryRow(ctx,
+		`SELECT id, code, user_id, place_id, comment, created_at, updated_at, deleted_at
+		 FROM reviews WHERE id = $1 AND deleted_at IS NULL`, id).
+		Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
+			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt)
 	if err != nil {
 		return nil, err
 	}
-
-	return &rev, nil
+	return &rv, nil
 }
 
-func (r *ReviewRepository) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, "DELETE FROM feature_reviews WHERE id = $1", id)
+// CreateTx inserts a review row inside an existing transaction.
+func (r *ReviewRepository) CreateTx(ctx context.Context, tx pgx.Tx, req models.CreateReviewRequest) (*models.Review, error) {
+	var rv models.Review
+	err := tx.QueryRow(ctx,
+		`INSERT INTO reviews (user_id, place_id, comment)
+		 VALUES ($1, $2, $3)
+		 RETURNING id, code, user_id, place_id, comment, created_at, updated_at, deleted_at`,
+		req.UserID, req.PlaceID, req.Comment).
+		Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
+			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &rv, nil
+}
+
+func (r *ReviewRepository) Delete(ctx context.Context, id int64) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE reviews SET deleted_at = NOW() WHERE id = $1`, id)
 	return err
 }
