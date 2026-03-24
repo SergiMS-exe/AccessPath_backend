@@ -12,9 +12,9 @@ services:
     image: postgres:16-alpine
     container_name: accesspath_db
     environment:
-      POSTGRES_USER: accesspath
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: accesspath_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -22,7 +22,7 @@ services:
       - ./db/ddl.sql:/docker-entrypoint-initdb.d/01_ddl.sql
       - ./db/dml.sql:/docker-entrypoint-initdb.d/02_dml.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U accesspath -d accesspath_db"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -39,6 +39,24 @@ services:
       timeout: 3s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    container_name: accesspath_storage
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Consola web
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Servicio opcional: solo se levanta con --profile full
   api:
     profiles: ["full"]
@@ -49,14 +67,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
-      PORT: 8080
-      DATABASE_URL: postgres://accesspath:secret@postgres:5432/accesspath_db?sslmode=disable
+      PORT: ${PORT}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: cambia-esto-en-produccion
-      ENV: production
+      JWT_SECRET: ${JWT_SECRET}
+      ENV: ${APP_ENV}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_USE_SSL: "false"
     ports:
-      - "8080:8080"
+      - "${PORT}:${PORT}"
 
 volumes:
   postgres_data:
+  minio_data:
