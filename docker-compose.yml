@@ -1,13 +1,10 @@
-version: "3.9"
-
-# Para desarrollo local: levanta solo la infraestructura (BD + caché).
-# El servidor Go corre en tu máquina con: air
-#
-# Para levantar todo en Docker (producción/staging):
-#   docker compose --profile full up --build
+networks:
+  proxy:
+    external: true       # red de Caddy
+  accesspath_network:
+    internal: true       # red privada entre contenedores
 
 services:
-
   postgres:
     image: postgres:16-alpine
     container_name: accesspath_db
@@ -21,6 +18,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/ddl.sql:/docker-entrypoint-initdb.d/01_ddl.sql
       - ./db/dml.sql:/docker-entrypoint-initdb.d/02_dml.sql
+    networks:
+      - accesspath_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -33,6 +32,8 @@ services:
     ports:
       - "6379:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - accesspath_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,18 +47,21 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"   # API S3
-      - "9001:9001"   # Consola web
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
+    networks:
+      - accesspath_network
+      - proxy
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # Servicio opcional: solo se levanta con --profile full
+  # Solo se levanta con: docker compose --profile full up
   api:
     profiles: ["full"]
     build: .
@@ -71,17 +75,20 @@ services:
         condition: service_healthy
     environment:
       PORT: ${PORT}
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
       ENV: ${APP_ENV}
-      MINIO_ENDPOINT: minio:9000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
-      MINIO_USE_SSL: "false"
+      MINIO_USE_SSL: ${MINIO_USE_SSL}
     ports:
       - "${PORT}:${PORT}"
+    networks:
+      - accesspath_network
+      - proxy
 
 volumes:
   postgres_data:
