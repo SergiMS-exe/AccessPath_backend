@@ -1,0 +1,103 @@
+basePath: /api/v1
+definitions:
+  models.Place:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: AccessPath Team
+  description: API para gestión de lugares accesibles, reseñas, colecciones y categorías.
+  title: AccessPath API
+  version: "1.0"
+paths:
+  /places/map:
+    get:
+      description: Retorna los lugares dentro de un bounding box definido por esquina
+        superior-izquierda y esquina inferior-derecha
+      parameters:
+      - description: Latitud de la esquina inferior-izquierda
+        in: query
+        name: min_lat
+        required: true
+        type: number
+      - description: Latitud de la esquina superior-derecha
+        in: query
+        name: max_lat
+        required: true
+        type: number
+      - description: Longitud de la esquina inferior-izquierda
+        in: query
+        name: min_lng
+        required: true
+        type: number
+      - description: Longitud de la esquina superior-derecha
+        in: query
+        name: max_lng
+        required: true
+        type: number
+      - description: Filtrar por categoría
+        in: query
+        name: category_id
+        type: integer
+      - default: 100
+        description: Máximo de resultados
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.Place'
+              type: array
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Lugares en el mapa
+      tags:
+      - places
+securityDefinitions:
+  BearerAuth:
+    description: 'Ingresa el token JWT con el prefijo "Bearer ". Ejemplo: "Bearer
+      eyJhbGci..."'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

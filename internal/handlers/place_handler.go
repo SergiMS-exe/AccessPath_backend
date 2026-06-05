@@ -21,26 +21,60 @@ func NewPlaceHandler(service *services.PlaceService) *PlaceHandler {
 
 func (h *PlaceHandler) GetAll(c *gin.Context) {
 	filters := models.PlaceFilters{
-		Limit:  parseIntOrDefault(c.Query("limit"), 20),
-		Offset: parseIntOrDefault(c.Query("offset"), 0),
+		Search:     c.Query("search"),
+		CategoryID: parseInt64OrDefault(c.Query("category_id"), 0),
+		MinRating:  parseFloatOrDefault(c.Query("min_rating"), 0),
+		Limit:      parseIntOrDefault(c.Query("limit"), 20),
+		Offset:     parseIntOrDefault(c.Query("offset"), 0),
 	}
 
-	places, err := h.service.GetAll(c.Request.Context(), filters)
+	result, err := h.service.GetAll(c.Request.Context(), filters)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch places")
 		return
 	}
 
-	response.OK(c, places)
+	response.OK(c, result)
 }
 
+// GetByBounds godoc
+// @Summary      Lugares en el mapa
+// @Description  Retorna los lugares dentro de un bounding box definido por esquina superior-izquierda y esquina inferior-derecha
+// @Tags         places
+// @Produce      json
+// @Param        min_lat     query   number  true   "Latitud de la esquina inferior-izquierda"
+// @Param        max_lat     query   number  true   "Latitud de la esquina superior-derecha"
+// @Param        min_lng     query   number  true   "Longitud de la esquina inferior-izquierda"
+// @Param        max_lng     query   number  true   "Longitud de la esquina superior-derecha"
+// @Param        category_id query   int     false  "Filtrar por categoría"
+// @Param        limit       query   int     false  "Máximo de resultados"  default(100)
+// @Success      200  {object}  map[string][]models.Place
+// @Failure      400  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /places/map [get]
 func (h *PlaceHandler) GetByBounds(c *gin.Context) {
+	minLat := parseFloatOrDefault(c.Query("min_lat"), 0)
+	maxLat := parseFloatOrDefault(c.Query("max_lat"), 0)
+	minLng := parseFloatOrDefault(c.Query("min_lng"), 0)
+	maxLng := parseFloatOrDefault(c.Query("max_lng"), 0)
+
+	if c.Query("min_lat") == "" || c.Query("max_lat") == "" ||
+		c.Query("min_lng") == "" || c.Query("max_lng") == "" {
+		response.BadRequest(c, "min_lat, max_lat, min_lng and max_lng are required")
+		return
+	}
+	if minLat >= maxLat || minLng >= maxLng {
+		response.BadRequest(c, "min_lat must be less than max_lat and min_lng less than max_lng")
+		return
+	}
+
 	filters := models.BoundsFilter{
-		MinLat: parseFloatOrDefault(c.Query("min_lat"), 0),
-		MaxLat: parseFloatOrDefault(c.Query("max_lat"), 0),
-		MinLng: parseFloatOrDefault(c.Query("min_lng"), 0),
-		MaxLng: parseFloatOrDefault(c.Query("max_lng"), 0),
-		Limit:  parseIntOrDefault(c.Query("limit"), 100),
+		MinLat:     minLat,
+		MaxLat:     maxLat,
+		MinLng:     minLng,
+		MaxLng:     maxLng,
+		CategoryID: parseInt64OrDefault(c.Query("category_id"), 0),
+		Limit:      parseIntOrDefault(c.Query("limit"), 100),
 	}
 
 	places, err := h.service.GetByBounds(c.Request.Context(), filters)
@@ -142,6 +176,13 @@ func (h *PlaceHandler) Delete(c *gin.Context) {
 
 func parseIntOrDefault(s string, def int) int {
 	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
+	return def
+}
+
+func parseInt64OrDefault(s string, def int64) int64 {
+	if v, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return v
 	}
 	return def

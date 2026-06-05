@@ -17,6 +17,7 @@ func NewPlaceRepository(db *pgxpool.Pool) *PlaceRepository {
 }
 
 const placeColumns = `id, code, name, address, latitude, longitude, description, created_by, created_at, updated_at, deleted_at`
+const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.created_by, p.created_at, p.updated_at, p.deleted_at`
 
 func scanPlace(row interface {
 	Scan(...any) error
@@ -25,32 +26,57 @@ func scanPlace(row interface {
 		&p.Description, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 }
 
-func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, error) {
+const placeWhereFilters = `
+	  AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')
+	  AND ($2::bigint = 0 OR EXISTS (
+	        SELECT 1 FROM place_rating_cache prc
+	        JOIN subcategories s ON s.id = prc.subcategory_id
+	        WHERE prc.place_id = p.id AND s.category_id = $2
+	  ))
+	  AND ($3::numeric = 0 OR (
+	        SELECT COALESCE(AVG(prc.avg_score), 0)
+	        FROM place_rating_cache prc
+	        JOIN subcategories s ON s.id = prc.subcategory_id
+	        WHERE prc.place_id = p.id
+	          AND ($2::bigint = 0 OR s.category_id = $2)
+	  ) >= $3)`
+
+func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, int, error) {
 	if filters.Limit == 0 {
 		filters.Limit = 20
 	}
 
-	rows, err := r.db.Query(ctx,
-		`SELECT `+placeColumns+`
-		 FROM places
-		 WHERE deleted_at IS NULL
-		 ORDER BY created_at DESC
-		 LIMIT $1 OFFSET $2`,
-		filters.Limit, filters.Offset)
+	var total int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM places p
+		 WHERE p.deleted_at IS NULL`+placeWhereFilters,
+		filters.Search, filters.CategoryID, filters.MinRating).Scan(&total)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx,
+		`SELECT `+placeColumnsP+`
+		 FROM places p
+		 WHERE p.deleted_at IS NULL`+placeWhereFilters+`
+		 ORDER BY p.created_at DESC
+		 LIMIT $4 OFFSET $5`,
+		filters.Search, filters.CategoryID, filters.MinRating, filters.Limit, filters.Offset)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 
-	var places []models.Place
+	places := make([]models.Place, 0, filters.Limit)
 	for rows.Next() {
 		var p models.Place
 		if err := scanPlace(rows, &p); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		places = append(places, p)
 	}
-	return places, nil
+	return places, total, nil
 }
 
 func (r *PlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place, error) {
@@ -79,20 +105,25 @@ func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilte
 	}
 
 	rows, err := r.db.Query(ctx,
-		`SELECT `+placeColumns+`
-		 FROM places
-		 WHERE deleted_at IS NULL
-		   AND latitude BETWEEN $1 AND $2
-		   AND longitude BETWEEN $3 AND $4
-		 ORDER BY created_at DESC
-		 LIMIT $5`,
-		f.MinLat, f.MaxLat, f.MinLng, f.MaxLng, f.Limit)
+		`SELECT `+placeColumnsP+`
+		 FROM places p
+		 WHERE p.deleted_at IS NULL
+		   AND p.latitude  BETWEEN $1 AND $2
+		   AND p.longitude BETWEEN $3 AND $4
+		   AND ($5::bigint = 0 OR EXISTS (
+		         SELECT 1 FROM place_rating_cache prc
+		         JOIN subcategories s ON s.id = prc.subcategory_id
+		         WHERE prc.place_id = p.id AND s.category_id = $5
+		   ))
+		 ORDER BY p.created_at DESC
+		 LIMIT $6`,
+		f.MinLat, f.MaxLat, f.MinLng, f.MaxLng, f.CategoryID, f.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var places []models.Place
+	places := make([]models.Place, 0)
 	for rows.Next() {
 		var p models.Place
 		if err := scanPlace(rows, &p); err != nil {

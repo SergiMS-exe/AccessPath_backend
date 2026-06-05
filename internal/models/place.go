@@ -45,16 +45,28 @@ type UpdatePlaceRequest struct {
 }
 
 type PlaceFilters struct {
-	Limit  int
-	Offset int
+	Search     string
+	CategoryID int64
+	MinRating  float64
+	Limit      int
+	Offset     int
+}
+
+// PlaceListResult wraps the paginated list response for GET /places.
+type PlaceListResult struct {
+	Places []Place `json:"places"`
+	Total  int     `json:"total"`
+	Limit  int     `json:"limit"`
+	Offset int     `json:"offset"`
 }
 
 type BoundsFilter struct {
-	MinLat float64
-	MaxLat float64
-	MinLng float64
-	MaxLng float64
-	Limit  int
+	MinLat     float64
+	MaxLat     float64
+	MinLng     float64
+	MaxLng     float64
+	CategoryID int64
+	Limit      int
 }
 
 type NearbyFilter struct {

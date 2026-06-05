@@ -45,10 +45,7 @@ func (s *PhotoService) Upload(ctx context.Context, data []byte) (string, error) 
 		return "", fmt.Errorf("photo: minio upload: %w", err)
 	}
 
-	scheme := "http"
-	if s.minio.IsSecure() {
-		scheme = "https"
-	}
-	url := fmt.Sprintf("%s://%s/%s/%s", scheme, s.minio.EndpointURL().Host, s.bucket, objectName)
+	endpointURL := s.minio.EndpointURL()
+	url := fmt.Sprintf("%s://%s/%s/%s", endpointURL.Scheme, endpointURL.Host, s.bucket, objectName)
 	return url, nil
 }

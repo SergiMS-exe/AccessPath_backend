@@ -17,8 +17,17 @@ func NewPlaceService(repo *repositories.PlaceRepository, ratingSvc *RatingServic
 	return &PlaceService{repo: repo, ratingSvc: ratingSvc}
 }
 
-func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, error) {
-	return s.repo.FindAll(ctx, filters)
+func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error) {
+	places, total, err := s.repo.FindAll(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	return &models.PlaceListResult{
+		Places: places,
+		Total:  total,
+		Limit:  filters.Limit,
+		Offset: filters.Offset,
+	}, nil
 }
 
 func (s *PlaceService) GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.Place, error) {

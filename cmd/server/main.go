@@ -1,3 +1,18 @@
+// Package main is the entry point of the AccessPath API.
+//
+// @title           AccessPath API
+// @version         1.0
+// @description     API para gestión de lugares accesibles, reseñas, colecciones y categorías.
+//
+// @contact.name    AccessPath Team
+//
+// @host            localhost:8080
+// @BasePath        /api/v1
+//
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Ingresa el token JWT con el prefijo "Bearer ". Ejemplo: "Bearer eyJhbGci..."
 package main
 
 import (
@@ -9,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "accesspath/docs"
 	"accesspath/internal/app"
 	"accesspath/internal/config"
 	"accesspath/internal/routes"
