@@ -24,6 +24,7 @@ Thumbs.db
 # Claude — ignorar todo excepto instrucciones de proyecto
 .claude/*
 !.claude/CLAUDE.md
+!.claude/PROJECT.md
 
 # Binario compilado localmente en la raiz (no el directorio cmd/server/)
 /server
