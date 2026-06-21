@@ -43,6 +43,7 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 		{
 			auth.POST("/register", h.User.Register)
 			auth.POST("/login", h.User.Login)
+			auth.POST("/refresh", h.User.Refresh)
 		}
 
 		// Users

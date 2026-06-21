@@ -10,7 +10,7 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-func BuildHandlers(db *pgxpool.Pool, minioClient *minio.Client, minioBucket string) *routes.Handlers {
+func BuildHandlers(db *pgxpool.Pool, minioClient *minio.Client, minioBucket, jwtSecret string) *routes.Handlers {
 	repos := repositories.New(db)
 
 	ratingSvc := services.NewRatingService(repos.Rating)
@@ -27,6 +27,6 @@ func BuildHandlers(db *pgxpool.Pool, minioClient *minio.Client, minioBucket stri
 		Category:   handlers.NewCategoryHandler(categorySvc),
 		Review:     handlers.NewReviewHandler(reviewSvc),
 		Collection: handlers.NewCollectionHandler(collectionSvc),
-		User:       handlers.NewUserHandler(userSvc),
+		User:       handlers.NewUserHandler(userSvc, jwtSecret),
 	}
 }

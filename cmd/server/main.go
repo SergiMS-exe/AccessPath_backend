@@ -66,7 +66,7 @@ func main() {
 	log.Println("Conectado a MinIO")
 
 	// 5. Inicializar handlers (repos + servicios + handlers)
-	h := app.BuildHandlers(db, minioClient, cfg.MinioBucket)
+	h := app.BuildHandlers(db, minioClient, cfg.MinioBucket, cfg.JWTSecret)
 
 	// 6. Montar router
 	r := routes.Setup(h, cache, cfg)

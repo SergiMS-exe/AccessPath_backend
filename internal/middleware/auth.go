@@ -34,6 +34,10 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			if tokenType, _ := claims["type"].(string); tokenType == "refresh" {
+				response.Unauthorized(c, "token invalido")
+				return
+			}
 			c.Set("user_id", claims["user_id"])
 		}
 

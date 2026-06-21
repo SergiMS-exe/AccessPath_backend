@@ -5,11 +5,10 @@ import (
 	"context"
 	"fmt"
 	"image"
-	_ "image/jpeg" // register JPEG decoder
-	_ "image/png"  // register PNG decoder
+	"image/jpeg"
+	_ "image/png" // register PNG decoder
 	"time"
 
-	"github.com/chai2010/webp"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -34,13 +33,13 @@ func (s *PhotoService) Upload(ctx context.Context, data []byte) (string, error) 
 	}
 
 	var buf bytes.Buffer
-	if err := webp.Encode(&buf, img, &webp.Options{Quality: 80}); err != nil {
-		return "", fmt.Errorf("photo: webp encode: %w", err)
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+		return "", fmt.Errorf("photo: jpeg encode: %w", err)
 	}
 
-	objectName := fmt.Sprintf("reviews/%d.webp", time.Now().UnixNano())
+	objectName := fmt.Sprintf("reviews/%d.jpg", time.Now().UnixNano())
 	_, err = s.minio.PutObject(ctx, s.bucket, objectName, &buf, int64(buf.Len()),
-		minio.PutObjectOptions{ContentType: "image/webp"})
+		minio.PutObjectOptions{ContentType: "image/jpeg"})
 	if err != nil {
 		return "", fmt.Errorf("photo: minio upload: %w", err)
 	}

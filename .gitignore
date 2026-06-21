@@ -1,6 +1,9 @@
 # Environment variables
 .env
 
+# Dev-only compose override (especifico de cada maquina)
+docker-compose.override.yml
+
 # Go
 bin/
 tmp/
@@ -17,4 +20,10 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-.claude/
+
+# Claude — ignorar todo excepto instrucciones de proyecto
+.claude/*
+!.claude/CLAUDE.md
+
+# Binario compilado localmente en la raiz (no el directorio cmd/server/)
+/server
