@@ -10,6 +10,7 @@ type Repositories struct {
 	Collection *CollectionRepository
 	Rating     *RatingRepository
 	Photo      *PhotoRepository
+	GmapsLog   *GmapsLogRepository
 }
 
 func New(db *pgxpool.Pool) *Repositories {
@@ -21,5 +22,6 @@ func New(db *pgxpool.Pool) *Repositories {
 		Collection: NewCollectionRepository(db),
 		Rating:     NewRatingRepository(db),
 		Photo:      NewPhotoRepository(db),
+		GmapsLog:   NewGmapsLogRepository(db),
 	}
 }

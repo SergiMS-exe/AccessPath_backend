@@ -20,7 +20,7 @@ func NewRatingRepository(db *pgxpool.Pool) *RatingRepository {
 // UpsertTx inserts or updates a score in review_ratings within the given transaction.
 func (r *RatingRepository) UpsertTx(ctx context.Context, tx pgx.Tx, reviewID, subcategoryID int64, score int) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO review_ratings (review_id, subcategory_id, score)
+		`INSERT INTO review_rating (review_id, subcategory_id, score)
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (review_id, subcategory_id)
 		 DO UPDATE SET score = $3, updated_at = NOW()`,
@@ -39,10 +39,10 @@ func (r *RatingRepository) RecalculateCacheTx(ctx context.Context, tx pgx.Tx, re
 		     ROUND(AVG(rr.score)::NUMERIC, 2),
 		     COUNT(rr.review_id),
 		     NOW()
-		 FROM review_ratings rr
-		 JOIN reviews rv ON rr.review_id = rv.id
+		 FROM review_rating rr
+		 JOIN review rv ON rr.review_id = rv.id
 		 WHERE rr.subcategory_id = $1
-		   AND rv.place_id = (SELECT place_id FROM reviews WHERE id = $2)
+		   AND rv.place_id = (SELECT place_id FROM review WHERE id = $2)
 		   AND rv.deleted_at IS NULL
 		 GROUP BY rv.place_id, rr.subcategory_id
 		 ON CONFLICT (place_id, subcategory_id)
@@ -66,8 +66,8 @@ func (r *RatingRepository) GetPlaceRatings(ctx context.Context, placeID int64) (
 		     prc.avg_score,
 		     prc.total_ratings
 		 FROM place_rating_cache prc
-		 JOIN subcategories s ON prc.subcategory_id = s.id
-		 JOIN categories   c ON s.category_id       = c.id
+		 JOIN subcategory s ON prc.subcategory_id = s.id
+		 JOIN category   c ON s.category_id       = c.id
 		 WHERE prc.place_id = $1
 		 ORDER BY c.display_order, s.display_order`,
 		placeID)

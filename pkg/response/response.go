@@ -38,3 +38,7 @@ func Unauthorized(c *gin.Context, msg string) {
 func InternalError(c *gin.Context, msg string) {
 	c.AbortWithStatusJSON(http.StatusInternalServerError, envelope{Error: msg})
 }
+
+func TooManyRequests(c *gin.Context, msg string) {
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, envelope{Error: msg})
+}

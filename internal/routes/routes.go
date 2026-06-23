@@ -59,8 +59,10 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 			places.GET("", middleware.Cache(cache, "places"), h.Place.GetAll)
 			places.GET("/map", h.Place.GetByBounds)
 			places.GET("/nearby", middleware.Cache(cache, "nearby"), h.Place.GetNearby)
+			places.GET("/search", h.Place.Search)
 			places.GET("/:id", h.Place.GetByID)
 			places.POST("", middleware.Auth(cfg.JWTSecret), h.Place.Create)
+			places.POST("/from-google", middleware.Auth(cfg.JWTSecret), h.Place.ImportFromGoogle)
 			places.PUT("/:id", middleware.Auth(cfg.JWTSecret), h.Place.Update)
 			places.DELETE("/:id", middleware.Auth(cfg.JWTSecret), h.Place.Delete)
 

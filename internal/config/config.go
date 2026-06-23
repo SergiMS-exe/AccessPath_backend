@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -19,6 +20,9 @@ type Config struct {
 	MinioSecretKey string
 	MinioBucket    string
 	MinioUseSSL    bool
+
+	GMapsAPIKey      string
+	GMapsMonthlyLimit int
 }
 
 func Load() *Config {
@@ -38,12 +42,24 @@ func Load() *Config {
 		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinioBucket:    getEnv("MINIO_BUCKET", "accesspath"),
 		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+
+		GMapsAPIKey:      getEnv("GOOGLE_MAPS_API_KEY", ""),
+		GMapsMonthlyLimit: getEnvInt("GOOGLE_MAPS_MONTHLY_LIMIT", 500),
 	}
 }
 
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
 	}
 	return fallback
 }

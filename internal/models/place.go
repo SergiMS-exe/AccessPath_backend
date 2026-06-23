@@ -3,17 +3,18 @@ package models
 import "time"
 
 type Place struct {
-	ID          int64      `json:"id"`
-	Code        string     `json:"code"`
-	Name        string     `json:"name"`
-	Address     *string    `json:"address,omitempty"`
-	Latitude    float64    `json:"latitude"`
-	Longitude   float64    `json:"longitude"`
-	Description *string    `json:"description,omitempty"`
-	CreatedBy   int64      `json:"created_by"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
+	ID             int64      `json:"id"`
+	Code           string     `json:"code"`
+	Name           string     `json:"name"`
+	Address        *string    `json:"address,omitempty"`
+	Latitude       float64    `json:"latitude"`
+	Longitude      float64    `json:"longitude"`
+	Description    *string    `json:"description,omitempty"`
+	GooglePlaceID  *string    `json:"google_place_id,omitempty"`
+	CreatedBy      int64      `json:"created_by"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
 }
 
 type PlaceWithDistance struct {
@@ -28,12 +29,25 @@ type PlaceDetail struct {
 }
 
 type CreatePlaceRequest struct {
-	Name        string  `json:"name" binding:"required"`
-	Address     *string `json:"address"`
-	Latitude    float64 `json:"latitude" binding:"required"`
-	Longitude   float64 `json:"longitude" binding:"required"`
-	Description *string `json:"description"`
-	CreatedBy   int64   `json:"created_by" binding:"required"`
+	Name          string  `json:"name" binding:"required"`
+	Address       *string `json:"address"`
+	Latitude      float64 `json:"latitude" binding:"required"`
+	Longitude     float64 `json:"longitude" binding:"required"`
+	Description   *string `json:"description"`
+	GooglePlaceID *string `json:"google_place_id"`
+	CreatedBy     int64   `json:"created_by" binding:"required"`
+}
+
+type ImportFromGoogleRequest struct {
+	GooglePlaceID string `json:"google_place_id" binding:"required"`
+	SessionToken  string `json:"session_token" binding:"required"`
+}
+
+type GoogleAutocompleteItem struct {
+	PlaceID       string `json:"place_id"`
+	Description   string `json:"description"`
+	MainText      string `json:"main_text"`
+	SecondaryText string `json:"secondary_text"`
 }
 
 type UpdatePlaceRequest struct {

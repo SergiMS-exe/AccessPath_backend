@@ -16,27 +16,27 @@ func NewPlaceRepository(db *pgxpool.Pool) *PlaceRepository {
 	return &PlaceRepository{db: db}
 }
 
-const placeColumns = `id, code, name, address, latitude, longitude, description, created_by, created_at, updated_at, deleted_at`
-const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.created_by, p.created_at, p.updated_at, p.deleted_at`
+const placeColumns = `id, code, name, address, latitude, longitude, description, google_place_id, created_by, created_at, updated_at, deleted_at`
+const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.google_place_id, p.created_by, p.created_at, p.updated_at, p.deleted_at`
 
 func scanPlace(row interface {
 	Scan(...any) error
 }, p *models.Place) error {
 	return row.Scan(&p.ID, &p.Code, &p.Name, &p.Address, &p.Latitude, &p.Longitude,
-		&p.Description, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
+		&p.Description, &p.GooglePlaceID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 }
 
 const placeWhereFilters = `
 	  AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')
 	  AND ($2::bigint = 0 OR EXISTS (
 	        SELECT 1 FROM place_rating_cache prc
-	        JOIN subcategories s ON s.id = prc.subcategory_id
+	        JOIN subcategory s ON s.id = prc.subcategory_id
 	        WHERE prc.place_id = p.id AND s.category_id = $2
 	  ))
 	  AND ($3::numeric = 0 OR (
 	        SELECT COALESCE(AVG(prc.avg_score), 0)
 	        FROM place_rating_cache prc
-	        JOIN subcategories s ON s.id = prc.subcategory_id
+	        JOIN subcategory s ON s.id = prc.subcategory_id
 	        WHERE prc.place_id = p.id
 	          AND ($2::bigint = 0 OR s.category_id = $2)
 	  ) >= $3)`
@@ -49,7 +49,7 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 	var total int
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*)
-		 FROM places p
+		 FROM place p
 		 WHERE p.deleted_at IS NULL`+placeWhereFilters,
 		filters.Search, filters.CategoryID, filters.MinRating).Scan(&total)
 	if err != nil {
@@ -58,7 +58,7 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumnsP+`
-		 FROM places p
+		 FROM place p
 		 WHERE p.deleted_at IS NULL`+placeWhereFilters+`
 		 ORDER BY p.created_at DESC
 		 LIMIT $4 OFFSET $5`,
@@ -82,7 +82,7 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 func (r *PlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place, error) {
 	var p models.Place
 	err := scanPlace(r.db.QueryRow(ctx,
-		`SELECT `+placeColumns+` FROM places WHERE id = $1 AND deleted_at IS NULL`, id), &p)
+		`SELECT `+placeColumns+` FROM place WHERE id = $1 AND deleted_at IS NULL`, id), &p)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (r *PlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place
 func (r *PlaceRepository) FindByCode(ctx context.Context, code string) (*models.Place, error) {
 	var p models.Place
 	err := scanPlace(r.db.QueryRow(ctx,
-		`SELECT `+placeColumns+` FROM places WHERE code = $1 AND deleted_at IS NULL`, code), &p)
+		`SELECT `+placeColumns+` FROM place WHERE code = $1 AND deleted_at IS NULL`, code), &p)
 	if err != nil {
 		return nil, err
 	}
@@ -106,13 +106,13 @@ func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilte
 
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumnsP+`
-		 FROM places p
+		 FROM place p
 		 WHERE p.deleted_at IS NULL
 		   AND p.latitude  BETWEEN $1 AND $2
 		   AND p.longitude BETWEEN $3 AND $4
 		   AND ($5::bigint = 0 OR EXISTS (
 		         SELECT 1 FROM place_rating_cache prc
-		         JOIN subcategories s ON s.id = prc.subcategory_id
+		         JOIN subcategory s ON s.id = prc.subcategory_id
 		         WHERE prc.place_id = p.id AND s.category_id = $5
 		   ))
 		 ORDER BY p.created_at DESC
@@ -145,7 +145,7 @@ func (r *PlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter)
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumns+`,
 		 (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) AS distance
-		 FROM places
+		 FROM place
 		 WHERE deleted_at IS NULL
 		   AND (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) < $3
 		 ORDER BY distance
@@ -160,7 +160,7 @@ func (r *PlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter)
 	for rows.Next() {
 		var p models.PlaceWithDistance
 		if err := rows.Scan(&p.ID, &p.Code, &p.Name, &p.Address, &p.Latitude, &p.Longitude,
-			&p.Description, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt, &p.Distance); err != nil {
+			&p.Description, &p.GooglePlaceID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt, &p.Distance); err != nil {
 			return nil, err
 		}
 		places = append(places, p)
@@ -171,10 +171,21 @@ func (r *PlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter)
 func (r *PlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
 	var p models.Place
 	err := scanPlace(r.db.QueryRow(ctx,
-		`INSERT INTO places (name, address, latitude, longitude, description, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO place (name, address, latitude, longitude, description, google_place_id, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+placeColumns,
-		req.Name, req.Address, req.Latitude, req.Longitude, req.Description, req.CreatedBy), &p)
+		req.Name, req.Address, req.Latitude, req.Longitude, req.Description, req.GooglePlaceID, req.CreatedBy), &p)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *PlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error) {
+	var p models.Place
+	err := scanPlace(r.db.QueryRow(ctx,
+		`SELECT `+placeColumns+` FROM place WHERE google_place_id = $1 AND deleted_at IS NULL`,
+		googlePlaceID), &p)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +195,7 @@ func (r *PlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequ
 func (r *PlaceRepository) Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error) {
 	var p models.Place
 	err := scanPlace(r.db.QueryRow(ctx,
-		`UPDATE places
+		`UPDATE place
 		 SET name = $2, address = $3, latitude = $4, longitude = $5, description = $6, updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING `+placeColumns,
@@ -197,6 +208,6 @@ func (r *PlaceRepository) Update(ctx context.Context, id int64, req models.Updat
 
 func (r *PlaceRepository) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE places SET deleted_at = NOW() WHERE id = $1`, id)
+		`UPDATE place SET deleted_at = NOW() WHERE id = $1`, id)
 	return err
 }

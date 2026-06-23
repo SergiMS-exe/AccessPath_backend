@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -119,6 +120,45 @@ func (h *PlaceHandler) GetByID(c *gin.Context) {
 	}
 
 	response.OK(c, detail)
+}
+
+func (h *PlaceHandler) Search(c *gin.Context) {
+	q := c.Query("q")
+	if q == "" {
+		response.BadRequest(c, "q is required")
+		return
+	}
+	session := c.Query("session")
+
+	items, err := h.service.Search(c.Request.Context(), q, session)
+	if err != nil {
+		response.InternalError(c, "Search failed")
+		return
+	}
+	response.OK(c, items)
+}
+
+func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
+	var req models.ImportFromGoogleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	userIDRaw, _ := c.Get("user_id")
+	userID := int64(userIDRaw.(float64))
+
+	place, err := h.service.ImportFromGoogle(c.Request.Context(), req.GooglePlaceID, req.SessionToken, userID)
+	if err != nil {
+		if errors.Is(err, services.ErrGmapsQuotaExceeded) {
+			response.TooManyRequests(c, "Monthly Google Maps quota reached")
+			return
+		}
+		response.InternalError(c, "Failed to import place")
+		return
+	}
+
+	c.JSON(http.StatusCreated, response.Wrap(place))
 }
 
 func (h *PlaceHandler) Create(c *gin.Context) {

@@ -21,7 +21,7 @@ func NewPhotoRepository(db *pgxpool.Pool) *PhotoRepository {
 func (r *PhotoRepository) SaveTx(ctx context.Context, tx pgx.Tx, reviewID int64, url string) (*models.Photo, error) {
 	var ph models.Photo
 	err := tx.QueryRow(ctx,
-		`INSERT INTO review_photos (review_id, url)
+		`INSERT INTO review_photo (review_id, url)
 		 VALUES ($1, $2)
 		 RETURNING id, code, review_id, url, created_at, deleted_at`,
 		reviewID, url).
