@@ -1,5 +1,22 @@
 -- DDL (Data Definition Language) - Schema definitions
 
+-- Esquema propio del proyecto. Todas las tablas viven aqui, no en public.
+-- El search_path se fija a nivel de BD para que el codigo y el seed usen
+-- nombres sin cualificar (place, review, ...) sin tocar las queries.
+-- Migracion para una BD existente (mover tablas ya creadas en public):
+--   CREATE SCHEMA IF NOT EXISTS accesspath;
+--   DO $$ DECLARE r RECORD; BEGIN
+--     FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+--       EXECUTE format('ALTER TABLE public.%I SET SCHEMA accesspath', r.tablename);
+--     END LOOP;
+--     EXECUTE format('ALTER DATABASE %I SET search_path TO accesspath, public', current_database());
+--   END $$;
+CREATE SCHEMA IF NOT EXISTS accesspath;
+DO $$ BEGIN
+    EXECUTE format('ALTER DATABASE %I SET search_path TO accesspath, public', current_database());
+END $$;
+SET search_path TO accesspath, public;
+
 -- Users
 CREATE TABLE IF NOT EXISTS "user" (
     id            BIGSERIAL PRIMARY KEY,
