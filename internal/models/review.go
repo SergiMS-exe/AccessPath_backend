@@ -3,19 +3,19 @@ package models
 import "time"
 
 type Review struct {
-	ID        int64      `json:"id"`
-	Code      string     `json:"code"`
-	UserID    int64      `json:"user_id"`
-	PlaceID   int64      `json:"place_id"`
-	Comment   *string    `json:"comment,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	ID        int64      `db:"id" json:"id"`
+	Code      string     `db:"code" json:"code"`
+	UserID    int64      `db:"user_id" json:"user_id"`
+	PlaceID   int64      `db:"place_id" json:"place_id"`
+	Comment   *string    `db:"comment" json:"comment,omitempty"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 type ReviewWithDetails struct {
 	Review
-	Username string `json:"username"`
+	Username string `db:"username" json:"username"`
 }
 
 // RatingInput is a single subcategory score submitted as part of a review.

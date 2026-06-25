@@ -28,18 +28,7 @@ func (r *ReviewRepository) FindByPlace(ctx context.Context, placeID int64) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var reviews []models.ReviewWithDetails
-	for rows.Next() {
-		var rv models.ReviewWithDetails
-		if err := rows.Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
-			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt, &rv.Username); err != nil {
-			return nil, err
-		}
-		reviews = append(reviews, rv)
-	}
-	return reviews, nil
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.ReviewWithDetails])
 }
 
 func (r *ReviewRepository) FindByUser(ctx context.Context, userID int64) ([]models.Review, error) {
@@ -51,47 +40,38 @@ func (r *ReviewRepository) FindByUser(ctx context.Context, userID int64) ([]mode
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var reviews []models.Review
-	for rows.Next() {
-		var rv models.Review
-		if err := rows.Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
-			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt); err != nil {
-			return nil, err
-		}
-		reviews = append(reviews, rv)
-	}
-	return reviews, nil
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.Review])
 }
 
 func (r *ReviewRepository) FindByID(ctx context.Context, id int64) (*models.Review, error) {
-	var rv models.Review
-	err := r.db.QueryRow(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT id, code, user_id, place_id, comment, created_at, updated_at, deleted_at
-		 FROM review WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
-			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt)
+		 FROM review WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return nil, err
 	}
-	return &rv, nil
+	review, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.Review])
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
 }
 
 // CreateTx inserts a review row inside an existing transaction.
 func (r *ReviewRepository) CreateTx(ctx context.Context, tx pgx.Tx, req models.CreateReviewRequest) (*models.Review, error) {
-	var rv models.Review
-	err := tx.QueryRow(ctx,
+	rows, err := tx.Query(ctx,
 		`INSERT INTO review (user_id, place_id, comment)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, code, user_id, place_id, comment, created_at, updated_at, deleted_at`,
-		req.UserID, req.PlaceID, req.Comment).
-		Scan(&rv.ID, &rv.Code, &rv.UserID, &rv.PlaceID, &rv.Comment,
-			&rv.CreatedAt, &rv.UpdatedAt, &rv.DeletedAt)
+		req.UserID, req.PlaceID, req.Comment)
 	if err != nil {
 		return nil, err
 	}
-	return &rv, nil
+	review, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.Review])
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
 }
 
 func (r *ReviewRepository) Delete(ctx context.Context, id int64) error {

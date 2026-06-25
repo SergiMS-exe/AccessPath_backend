@@ -5,6 +5,7 @@ import (
 
 	"accesspath/internal/models"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,53 +18,61 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 }
 
 func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, error) {
-	var u models.User
-	err := r.db.QueryRow(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT id, code, username, email, created_at, updated_at, deleted_at
-		 FROM "user" WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&u.ID, &u.Code, &u.Username, &u.Email, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt)
+		 FROM "user" WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return nil, err
 	}
-	return &u, nil
+	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.User])
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) FindByCode(ctx context.Context, code string) (*models.User, error) {
-	var u models.User
-	err := r.db.QueryRow(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT id, code, username, email, created_at, updated_at, deleted_at
-		 FROM "user" WHERE code = $1 AND deleted_at IS NULL`, code).
-		Scan(&u.ID, &u.Code, &u.Username, &u.Email, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt)
+		 FROM "user" WHERE code = $1 AND deleted_at IS NULL`, code)
 	if err != nil {
 		return nil, err
 	}
-	return &u, nil
+	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.User])
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models.UserWithPassword, error) {
-	var u models.UserWithPassword
-	err := r.db.QueryRow(ctx,
+	rows, err := r.db.Query(ctx,
 		`SELECT id, code, username, email, password_hash, created_at, updated_at, deleted_at
-		 FROM "user" WHERE email = $1 AND deleted_at IS NULL`, email).
-		Scan(&u.ID, &u.Code, &u.Username, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt)
+		 FROM "user" WHERE email = $1 AND deleted_at IS NULL`, email)
 	if err != nil {
 		return nil, err
 	}
-	return &u, nil
+	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.UserWithPassword])
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) Create(ctx context.Context, req models.CreateUserRequest, passwordHash string) (*models.User, error) {
-	var u models.User
-	err := r.db.QueryRow(ctx,
+	rows, err := r.db.Query(ctx,
 		`INSERT INTO "user" (username, email, password_hash)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, code, username, email, created_at, updated_at, deleted_at`,
-		req.Username, req.Email, passwordHash).
-		Scan(&u.ID, &u.Code, &u.Username, &u.Email, &u.CreatedAt, &u.UpdatedAt, &u.DeletedAt)
+		req.Username, req.Email, passwordHash)
 	if err != nil {
 		return nil, err
 	}
-	return &u, nil
+	user, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.User])
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id int64) error {

@@ -15,6 +15,7 @@ type ReviewService struct {
 	db         *pgxpool.Pool
 	reviewRepo *repositories.ReviewRepository
 	photoRepo  *repositories.PhotoRepository
+	placeRepo  *repositories.PlaceRepository
 	ratingSvc  *RatingService
 	photoSvc   *PhotoService
 }
@@ -23,6 +24,7 @@ func NewReviewService(
 	db *pgxpool.Pool,
 	reviewRepo *repositories.ReviewRepository,
 	photoRepo *repositories.PhotoRepository,
+	placeRepo *repositories.PlaceRepository,
 	ratingSvc *RatingService,
 	photoSvc *PhotoService,
 ) *ReviewService {
@@ -30,6 +32,7 @@ func NewReviewService(
 		db:         db,
 		reviewRepo: reviewRepo,
 		photoRepo:  photoRepo,
+		placeRepo:  placeRepo,
 		ratingSvc:  ratingSvc,
 		photoSvc:   photoSvc,
 	}
@@ -64,6 +67,11 @@ func (s *ReviewService) Create(ctx context.Context, req models.CreateReviewReque
 	review, err := s.reviewRepo.CreateTx(ctx, tx, req)
 	if err != nil {
 		return nil, fmt.Errorf("review: insert: %w", err)
+	}
+
+	// 1.5. Un lugar valorado pasa a ser visible en el mapa (published = true).
+	if err := s.placeRepo.MarkPublishedTx(ctx, tx, req.PlaceID); err != nil {
+		return nil, fmt.Errorf("review: publish place: %w", err)
 	}
 
 	// 2. Upsert ratings

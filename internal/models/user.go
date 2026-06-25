@@ -3,18 +3,18 @@ package models
 import "time"
 
 type User struct {
-	ID        int64      `json:"id"`
-	Code      string     `json:"code"`
-	Username  string     `json:"username"`
-	Email     string     `json:"email"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	ID        int64      `db:"id" json:"id"`
+	Code      string     `db:"code" json:"code"`
+	Username  string     `db:"username" json:"username"`
+	Email     string     `db:"email" json:"email"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 type UserWithPassword struct {
 	User
-	PasswordHash string `json:"-"`
+	PasswordHash string `db:"password_hash" json:"-"`
 }
 
 type CreateUserRequest struct {

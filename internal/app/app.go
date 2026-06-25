@@ -24,7 +24,7 @@ func BuildHandlers(db *pgxpool.Pool, minioClient *minio.Client, minioBucket, jwt
 
 	placeSvc      := services.NewPlaceService(repos.Place, ratingSvc, gmapsClient, repos.GmapsLog, gmapsMonthlyLimit)
 	categorySvc   := services.NewCategoryService(repos.Category)
-	reviewSvc     := services.NewReviewService(db, repos.Review, repos.Photo, ratingSvc, photoSvc)
+	reviewSvc     := services.NewReviewService(db, repos.Review, repos.Photo, repos.Place, ratingSvc, photoSvc)
 	collectionSvc := services.NewCollectionService(repos.Collection)
 	userSvc       := services.NewUserService(repos.User)
 

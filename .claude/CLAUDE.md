@@ -11,6 +11,10 @@ Para arquitectura detallada ver `.claude/PROJECT.md`.
   explicitamente. El usuario compila y arranca por su cuenta.
 - Handlers solo transforman HTTP → servicio → respuesta. Cero logica de negocio.
 - Repos solo hacen SQL parametrizado. Cero logica de negocio.
+- **Escaneo de filas a struct**: usar `pgx.CollectRows` / `pgx.CollectOneRow` con
+  `pgx.RowToStructByName[models.X]`. Los modelos llevan tag `db:"columna"` en cada campo.
+  No escribir `rows.Scan(&a, &b, ...)` a mano (el emparejamiento es por nombre, no por orden).
+  Excepcion: escalares sueltos (`COUNT(*)`) siguen con `QueryRow(...).Scan(&n)`.
 - Transacciones se abren en el servicio (ver `ReviewService.Create` como referencia).
 - Tras cambiar la API publica regenerar Swagger: `swag init -g cmd/server/main.go`.
 

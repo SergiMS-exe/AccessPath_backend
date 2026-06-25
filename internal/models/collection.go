@@ -3,14 +3,14 @@ package models
 import "time"
 
 type Collection struct {
-	ID        int64      `json:"id"`
-	Code      string     `json:"code"`
-	UserID    int64      `json:"user_id"`
-	Name      string     `json:"name"`
-	IsDefault bool       `json:"is_default"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	ID        int64      `db:"id" json:"id"`
+	Code      string     `db:"code" json:"code"`
+	UserID    int64      `db:"user_id" json:"user_id"`
+	Name      string     `db:"name" json:"name"`
+	IsDefault bool       `db:"is_default" json:"is_default"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 type CollectionPlace struct {

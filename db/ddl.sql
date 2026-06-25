@@ -38,7 +38,12 @@ CREATE TABLE IF NOT EXISTS subcategory (
 );
 
 -- Places
--- Migration for existing DBs: ALTER TABLE place ADD COLUMN IF NOT EXISTS google_place_id TEXT UNIQUE;
+-- Migration for existing DBs:
+--   ALTER TABLE place ADD COLUMN IF NOT EXISTS google_place_id TEXT UNIQUE;
+--   ALTER TABLE place ADD COLUMN IF NOT EXISTS published BOOLEAN NOT NULL DEFAULT FALSE;
+--   UPDATE place SET published = TRUE WHERE EXISTS (SELECT 1 FROM review r WHERE r.place_id = place.id AND r.deleted_at IS NULL);
+-- published: un lugar solo aparece en el mapa una vez tiene su primera valoracion.
+-- Hasta entonces vive en la tabla (sirve de cache anti-duplicados de Google) pero oculto.
 CREATE TABLE IF NOT EXISTS place (
     id              BIGSERIAL PRIMARY KEY,
     code            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
@@ -48,6 +53,7 @@ CREATE TABLE IF NOT EXISTS place (
     longitude       DOUBLE PRECISION NOT NULL,
     description     TEXT,
     google_place_id TEXT UNIQUE,
+    published       BOOLEAN NOT NULL DEFAULT FALSE,
     created_by      BIGINT NOT NULL REFERENCES "user"(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -120,6 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_place_created_by          ON place(created_by);
 CREATE INDEX IF NOT EXISTS idx_place_location            ON place(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_place_deleted_at          ON place(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_place_google_place_id     ON place(google_place_id) WHERE google_place_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_place_published_location   ON place(latitude, longitude) WHERE published AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_collection_user_id        ON collection(user_id);
 CREATE INDEX IF NOT EXISTS idx_review_place_id           ON review(place_id);
 CREATE INDEX IF NOT EXISTS idx_review_user_id            ON review(user_id);

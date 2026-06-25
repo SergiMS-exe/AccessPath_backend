@@ -69,6 +69,11 @@ HTTP Request
 
 Inyeccion de dependencias en `internal/app/app.go`. Sin interfaces explicitas; inyeccion directa por struct.
 
+Los repos escanean filas a struct con `pgx.CollectRows` / `pgx.CollectOneRow` +
+`pgx.RowToStructByName`, emparejando columnas por el tag `db:"..."` del modelo (no por
+orden). Las structs embebidas (`PlaceWithDistance`, `ReviewWithDetails`, etc.) se aplanan
+automaticamente. Esto elimina el `rows.Scan(...)` manual y la fragilidad de orden de columnas.
+
 ---
 
 ## Modelo de datos
@@ -86,6 +91,10 @@ users ──< places (created_by)
 - Soft delete con `deleted_at` en users, places, reviews, photos, collections.
 - Ratings materializados en `place_rating_cache`, recalculados en la misma transaccion.
 - Busqueda geografica sin PostGIS: bounding box + Haversine en SQL.
+- **`place.published`**: un lugar importado de Google nace `false` (sirve de cache
+  anti-duplicados por `google_place_id`, pero oculto en el mapa). Pasa a `true` en su
+  primera valoracion (`ReviewService.Create` -> `PlaceRepository.MarkPublishedTx`, misma tx).
+  `GET /places/map` filtra `published = TRUE`. Indice parcial `idx_place_published_location`.
 
 ---
 

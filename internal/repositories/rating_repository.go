@@ -9,6 +9,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// placeRatingRow es una fila plana del join de place_rating_cache, antes de
+// agruparla por categoria en Go.
+type placeRatingRow struct {
+	CategoryID      int     `db:"category_id"`
+	CategoryName    string  `db:"category_name"`
+	SubcategoryID   int     `db:"subcategory_id"`
+	SubcategoryName string  `db:"subcategory_name"`
+	AvgScore        float64 `db:"avg_score"`
+	TotalRatings    int     `db:"total_ratings"`
+}
+
 type RatingRepository struct {
 	db *pgxpool.Pool
 }
@@ -74,7 +85,10 @@ func (r *RatingRepository) GetPlaceRatings(ctx context.Context, placeID int64) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	flat, err := pgx.CollectRows(rows, pgx.RowToStructByName[placeRatingRow])
+	if err != nil {
+		return nil, err
+	}
 
 	type catKey struct {
 		id   int
@@ -84,29 +98,20 @@ func (r *RatingRepository) GetPlaceRatings(ctx context.Context, placeID int64) (
 	seen := map[int]bool{}
 	groups := map[int]*models.CategoryRating{}
 
-	for rows.Next() {
-		var (
-			catID, subID     int
-			catName, subName string
-			avgScore         float64
-			total            int
-		)
-		if err := rows.Scan(&catID, &catName, &subID, &subName, &avgScore, &total); err != nil {
-			return nil, err
-		}
-		if !seen[catID] {
-			seen[catID] = true
-			order = append(order, catKey{catID, catName})
-			groups[catID] = &models.CategoryRating{
-				CategoryID:   catID,
-				CategoryName: catName,
+	for _, row := range flat {
+		if !seen[row.CategoryID] {
+			seen[row.CategoryID] = true
+			order = append(order, catKey{row.CategoryID, row.CategoryName})
+			groups[row.CategoryID] = &models.CategoryRating{
+				CategoryID:   row.CategoryID,
+				CategoryName: row.CategoryName,
 			}
 		}
-		groups[catID].Subcategories = append(groups[catID].Subcategories, models.SubcategoryRating{
-			SubcategoryID:   subID,
-			SubcategoryName: subName,
-			AvgScore:        avgScore,
-			TotalRatings:    total,
+		groups[row.CategoryID].Subcategories = append(groups[row.CategoryID].Subcategories, models.SubcategoryRating{
+			SubcategoryID:   row.SubcategoryID,
+			SubcategoryName: row.SubcategoryName,
+			AvgScore:        row.AvgScore,
+			TotalRatings:    row.TotalRatings,
 		})
 	}
 

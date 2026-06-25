@@ -19,15 +19,17 @@ func NewPhotoRepository(db *pgxpool.Pool) *PhotoRepository {
 
 // SaveTx inserts a photo record into review_photos within the given transaction.
 func (r *PhotoRepository) SaveTx(ctx context.Context, tx pgx.Tx, reviewID int64, url string) (*models.Photo, error) {
-	var ph models.Photo
-	err := tx.QueryRow(ctx,
+	rows, err := tx.Query(ctx,
 		`INSERT INTO review_photo (review_id, url)
 		 VALUES ($1, $2)
 		 RETURNING id, code, review_id, url, created_at, deleted_at`,
-		reviewID, url).
-		Scan(&ph.ID, &ph.Code, &ph.ReviewID, &ph.URL, &ph.CreatedAt, &ph.DeletedAt)
+		reviewID, url)
 	if err != nil {
 		return nil, err
 	}
-	return &ph, nil
+	photo, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.Photo])
+	if err != nil {
+		return nil, err
+	}
+	return &photo, nil
 }

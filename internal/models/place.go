@@ -3,23 +3,24 @@ package models
 import "time"
 
 type Place struct {
-	ID             int64      `json:"id"`
-	Code           string     `json:"code"`
-	Name           string     `json:"name"`
-	Address        *string    `json:"address,omitempty"`
-	Latitude       float64    `json:"latitude"`
-	Longitude      float64    `json:"longitude"`
-	Description    *string    `json:"description,omitempty"`
-	GooglePlaceID  *string    `json:"google_place_id,omitempty"`
-	CreatedBy      int64      `json:"created_by"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
+	ID             int64      `db:"id" json:"id"`
+	Code           string     `db:"code" json:"code"`
+	Name           string     `db:"name" json:"name"`
+	Address        *string    `db:"address" json:"address,omitempty"`
+	Latitude       float64    `db:"latitude" json:"latitude"`
+	Longitude      float64    `db:"longitude" json:"longitude"`
+	Description    *string    `db:"description" json:"description,omitempty"`
+	GooglePlaceID  *string    `db:"google_place_id" json:"google_place_id,omitempty"`
+	Published      bool       `db:"published" json:"published"`
+	CreatedBy      int64      `db:"created_by" json:"created_by"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 type PlaceWithDistance struct {
 	Place
-	Distance float64 `json:"distance"`
+	Distance float64 `db:"distance" json:"distance"`
 }
 
 // PlaceDetail is returned by GET /places/:id and embeds the rating cache.
