@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -51,5 +52,5 @@ func SetCache(client *redis.Client, key string, data any, ttl time.Duration) err
 	if err != nil {
 		return err
 	}
-	return client.Set(nil, key, bytes, ttl).Err()
+	return client.Set(context.Background(), key, bytes, ttl).Err()
 }

@@ -23,12 +23,15 @@ type PlaceWithDistance struct {
 	Distance float64 `db:"distance" json:"distance"`
 }
 
-// PlaceDetail is returned by GET /places/:id and embeds the rating cache.
+// PlaceDetail is returned by GET /places/:id: place + accessibility breakdown
+// (por dimension y criterio) + submissions ("que cuenta la gente").
 type PlaceDetail struct {
 	Place
-	Ratings []CategoryRating `json:"ratings"`
+	Accessibility PlaceAccessibility      `json:"accessibility"`
+	Submissions   []SubmissionWithDetails `json:"submissions"`
 }
 
+// CreatePlaceRequest: created_by NO viene del body, se deriva del token.
 type CreatePlaceRequest struct {
 	Name          string  `json:"name" binding:"required"`
 	Address       *string `json:"address"`
@@ -36,7 +39,7 @@ type CreatePlaceRequest struct {
 	Longitude     float64 `json:"longitude" binding:"required"`
 	Description   *string `json:"description"`
 	GooglePlaceID *string `json:"google_place_id"`
-	CreatedBy     int64   `json:"created_by" binding:"required"`
+	CreatedBy     int64   `json:"-"`
 }
 
 type ImportFromGoogleRequest struct {
@@ -60,11 +63,9 @@ type UpdatePlaceRequest struct {
 }
 
 type PlaceFilters struct {
-	Search     string
-	CategoryID int64
-	MinRating  float64
-	Limit      int
-	Offset     int
+	Search string
+	Limit  int
+	Offset int
 }
 
 // PlaceListResult wraps the paginated list response for GET /places.
@@ -76,12 +77,11 @@ type PlaceListResult struct {
 }
 
 type BoundsFilter struct {
-	MinLat     float64
-	MaxLat     float64
-	MinLng     float64
-	MaxLng     float64
-	CategoryID int64
-	Limit      int
+	MinLat float64
+	MaxLat float64
+	MinLng float64
+	MaxLng float64
+	Limit  int
 }
 
 type NearbyFilter struct {

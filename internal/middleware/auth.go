@@ -25,6 +25,11 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// Exigir HS256: rechazar cualquier otro algoritmo (evita el ataque de
+			// confusion de algoritmo, p.ej. tokens firmados con "none" o RS/ES).
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok || token.Method.Alg() != "HS256" {
+				return nil, jwt.ErrTokenSignatureInvalid
+			}
 			return []byte(jwtSecret), nil
 		})
 
@@ -43,4 +48,22 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// UserID extrae el user_id (int64) del contexto que fijo el middleware Auth.
+// Los claims JWT llegan como float64 en MapClaims; esta funcion lo normaliza.
+func UserID(c *gin.Context) (int64, bool) {
+	raw, ok := c.Get("user_id")
+	if !ok {
+		return 0, false
+	}
+	switch v := raw.(type) {
+	case float64:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	}
+	return 0, false
 }

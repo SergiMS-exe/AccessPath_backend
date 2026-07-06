@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"accesspath/internal/middleware"
 	"accesspath/internal/models"
 	"accesspath/internal/services"
 	"accesspath/pkg/response"
@@ -22,11 +23,9 @@ func NewPlaceHandler(service *services.PlaceService) *PlaceHandler {
 
 func (h *PlaceHandler) GetAll(c *gin.Context) {
 	filters := models.PlaceFilters{
-		Search:     c.Query("search"),
-		CategoryID: parseInt64OrDefault(c.Query("category_id"), 0),
-		MinRating:  parseFloatOrDefault(c.Query("min_rating"), 0),
-		Limit:      parseIntOrDefault(c.Query("limit"), 20),
-		Offset:     parseIntOrDefault(c.Query("offset"), 0),
+		Search: c.Query("search"),
+		Limit:  parseIntOrDefault(c.Query("limit"), 20),
+		Offset: parseIntOrDefault(c.Query("offset"), 0),
 	}
 
 	result, err := h.service.GetAll(c.Request.Context(), filters)
@@ -47,9 +46,8 @@ func (h *PlaceHandler) GetAll(c *gin.Context) {
 // @Param        max_lat     query   number  true   "Latitud de la esquina superior-derecha"
 // @Param        min_lng     query   number  true   "Longitud de la esquina inferior-izquierda"
 // @Param        max_lng     query   number  true   "Longitud de la esquina superior-derecha"
-// @Param        category_id query   int     false  "Filtrar por categoría"
 // @Param        limit       query   int     false  "Máximo de resultados"  default(100)
-// @Success      200  {object}  map[string][]models.Place
+// @Success      200  {object}  map[string][]models.PlaceMapItem
 // @Failure      400  {object}  map[string]string
 // @Failure      500  {object}  map[string]string
 // @Router       /places/map [get]
@@ -70,12 +68,11 @@ func (h *PlaceHandler) GetByBounds(c *gin.Context) {
 	}
 
 	filters := models.BoundsFilter{
-		MinLat:     minLat,
-		MaxLat:     maxLat,
-		MinLng:     minLng,
-		MaxLng:     maxLng,
-		CategoryID: parseInt64OrDefault(c.Query("category_id"), 0),
-		Limit:      parseIntOrDefault(c.Query("limit"), 100),
+		MinLat: minLat,
+		MaxLat: maxLat,
+		MinLng: minLng,
+		MaxLng: maxLng,
+		Limit:  parseIntOrDefault(c.Query("limit"), 100),
 	}
 
 	places, err := h.service.GetByBounds(c.Request.Context(), filters)
@@ -145,13 +142,20 @@ func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
 		return
 	}
 
-	userIDRaw, _ := c.Get("user_id")
-	userID := int64(userIDRaw.(float64))
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		response.Unauthorized(c, "token requerido")
+		return
+	}
 
 	place, err := h.service.ImportFromGoogle(c.Request.Context(), req.GooglePlaceID, req.SessionToken, userID)
 	if err != nil {
 		if errors.Is(err, services.ErrGmapsQuotaExceeded) {
 			response.TooManyRequests(c, "Monthly Google Maps quota reached")
+			return
+		}
+		if errors.Is(err, services.ErrPlaceClosedPermanently) {
+			response.BadRequest(c, "Este sitio está cerrado permanentemente")
 			return
 		}
 		response.InternalError(c, "Failed to import place")
@@ -162,11 +166,17 @@ func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
 }
 
 func (h *PlaceHandler) Create(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		response.Unauthorized(c, "token requerido")
+		return
+	}
 	var req models.CreatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	req.CreatedBy = userID
 
 	place, err := h.service.Create(c.Request.Context(), req)
 	if err != nil {
@@ -216,13 +226,6 @@ func (h *PlaceHandler) Delete(c *gin.Context) {
 
 func parseIntOrDefault(s string, def int) int {
 	if v, err := strconv.Atoi(s); err == nil {
-		return v
-	}
-	return def
-}
-
-func parseInt64OrDefault(s string, def int64) int64 {
-	if v, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return v
 	}
 	return def

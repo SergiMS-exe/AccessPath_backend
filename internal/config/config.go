@@ -20,9 +20,15 @@ type Config struct {
 	MinioSecretKey string
 	MinioBucket    string
 	MinioUseSSL    bool
+	// Base URL publica (resoluble desde el cliente movil) para servir las fotos,
+	// p.ej. https://cdn.example.com via Caddy. Vacio => se usa el endpoint interno
+	// de MinIO (solo valido en desarrollo local).
+	MinioPublicBaseURL string
 
 	GMapsAPIKey      string
 	GMapsMonthlyLimit int
+
+	Accessibility *AccessibilityThresholds
 }
 
 func Load() *Config {
@@ -42,9 +48,12 @@ func Load() *Config {
 		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinioBucket:    getEnv("MINIO_BUCKET", "accesspath"),
 		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+		MinioPublicBaseURL: getEnv("MINIO_PUBLIC_BASE_URL", ""),
 
 		GMapsAPIKey:      getEnv("GOOGLE_MAPS_API_KEY", ""),
 		GMapsMonthlyLimit: getEnvInt("GOOGLE_MAPS_MONTHLY_LIMIT", 500),
+
+		Accessibility: LoadAccessibilityThresholds(getEnv("ACCESSIBILITY_CONFIG_PATH", "config/accessibility.json")),
 	}
 }
 

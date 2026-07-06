@@ -12,18 +12,38 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var ErrGmapsQuotaExceeded = errors.New("google maps monthly quota exceeded")
+var (
+	ErrGmapsQuotaExceeded = errors.New("google maps monthly quota exceeded")
+	// ErrPlaceClosedPermanently: el sitio esta cerrado para siempre segun Google;
+	// no tiene sentido importarlo ni valorarlo.
+	ErrPlaceClosedPermanently = errors.New("place is permanently closed")
+)
 
 type PlaceService struct {
-	repo         *repositories.PlaceRepository
-	ratingSvc    *RatingService
-	gmaps        *gmaps.Client
-	gmapsLog     *repositories.GmapsLogRepository
-	monthlyLimit int
+	repo          *repositories.PlaceRepository
+	accSvc        *AccessibilityService
+	submissionSvc *SubmissionService
+	gmaps         *gmaps.Client
+	gmapsLog      *repositories.GmapsLogRepository
+	monthlyLimit  int
 }
 
-func NewPlaceService(repo *repositories.PlaceRepository, ratingSvc *RatingService, gmapsClient *gmaps.Client, gmapsLog *repositories.GmapsLogRepository, monthlyLimit int) *PlaceService {
-	return &PlaceService{repo: repo, ratingSvc: ratingSvc, gmaps: gmapsClient, gmapsLog: gmapsLog, monthlyLimit: monthlyLimit}
+func NewPlaceService(
+	repo *repositories.PlaceRepository,
+	accSvc *AccessibilityService,
+	submissionSvc *SubmissionService,
+	gmapsClient *gmaps.Client,
+	gmapsLog *repositories.GmapsLogRepository,
+	monthlyLimit int,
+) *PlaceService {
+	return &PlaceService{
+		repo:          repo,
+		accSvc:        accSvc,
+		submissionSvc: submissionSvc,
+		gmaps:         gmapsClient,
+		gmapsLog:      gmapsLog,
+		monthlyLimit:  monthlyLimit,
+	}
 }
 
 func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error) {
@@ -39,24 +59,72 @@ func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) 
 	}, nil
 }
 
-func (s *PlaceService) GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.Place, error) {
-	return s.repo.FindByBounds(ctx, filters)
+// GetByBounds devuelve los lugares del mapa enriquecidos con el estado por
+// dimension y el estado global (color del marcador).
+func (s *PlaceService) GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error) {
+	places, err := s.repo.FindByBounds(ctx, filters)
+	if err != nil {
+		return nil, err
+	}
+	if len(places) == 0 {
+		return []models.PlaceMapItem{}, nil
+	}
+
+	ids := make([]int64, 0, len(places))
+	for _, p := range places {
+		ids = append(ids, p.ID)
+	}
+	rows, err := s.repo.GetAggRowsByPlaceIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	rowsByPlace := map[int64][]models.CriterionAggRow{}
+	for _, row := range rows {
+		rowsByPlace[row.PlaceID] = append(rowsByPlace[row.PlaceID], row)
+	}
+
+	items := make([]models.PlaceMapItem, 0, len(places))
+	for _, p := range places {
+		dims := s.accSvc.BuildDimensions(rowsByPlace[p.ID])
+		// El mapa no necesita el desglose criterio a criterio.
+		for i := range dims {
+			dims[i].Criteria = nil
+		}
+		items = append(items, models.PlaceMapItem{
+			Place:        p,
+			Dimensions:   dims,
+			OverallState: s.accSvc.OverallState(dims),
+		})
+	}
+	return items, nil
 }
 
 func (s *PlaceService) GetNearby(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error) {
 	return s.repo.FindNearby(ctx, filters)
 }
 
+// GetByID devuelve el detalle: place + desglose de accesibilidad + submissions.
 func (s *PlaceService) GetByID(ctx context.Context, id int64) (*models.PlaceDetail, error) {
 	place, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("place: find: %w", err)
 	}
-	ratings, err := s.ratingSvc.GetPlaceRatings(ctx, id)
+	rows, err := s.repo.GetAccessibilityRows(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("place: ratings: %w", err)
+		return nil, fmt.Errorf("place: accessibility: %w", err)
 	}
-	return &models.PlaceDetail{Place: *place, Ratings: ratings}, nil
+	submissions, err := s.submissionSvc.GetByPlace(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("place: submissions: %w", err)
+	}
+	if submissions == nil {
+		submissions = []models.SubmissionWithDetails{}
+	}
+	return &models.PlaceDetail{
+		Place:         *place,
+		Accessibility: s.accSvc.BuildPlaceAccessibility(rows),
+		Submissions:   submissions,
+	}, nil
 }
 
 func (s *PlaceService) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
@@ -117,6 +185,13 @@ func (s *PlaceService) ImportFromGoogle(ctx context.Context, googlePlaceID, sess
 	details, err := s.gmaps.Details(ctx, googlePlaceID, sessionToken)
 	if err != nil {
 		return nil, fmt.Errorf("import: google details: %w", err)
+	}
+
+	// No importar sitios cerrados permanentemente. La llamada a Details ya
+	// consumio cuota, asi que se registra igualmente.
+	if details.BusinessStatus == gmaps.BusinessStatusClosedPermanently {
+		_ = s.gmapsLog.Log(ctx)
+		return nil, ErrPlaceClosedPermanently
 	}
 
 	req := models.CreatePlaceRequest{

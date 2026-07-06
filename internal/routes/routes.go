@@ -6,17 +6,19 @@ import (
 	"accesspath/internal/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"github.com/redis/go-redis/v9"
 )
 
 type Handlers struct {
-	Place      *handlers.PlaceHandler
-	Category   *handlers.CategoryHandler
-	Review     *handlers.ReviewHandler
-	Collection *handlers.CollectionHandler
-	User       *handlers.UserHandler
+	Place        *handlers.PlaceHandler
+	Catalog      *handlers.CatalogHandler
+	Contribution *handlers.ContributionHandler
+	Submission   *handlers.SubmissionHandler
+	Profile      *handlers.ProfileHandler
+	Collection   *handlers.CollectionHandler
+	User         *handlers.UserHandler
 }
 
 func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
@@ -36,14 +38,16 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
+	auth := middleware.Auth(cfg.JWTSecret)
+
 	v1 := r.Group("/api/v1")
 	{
-		// Auth - pública
-		auth := v1.Group("/auth")
+		// Auth - publica
+		authGroup := v1.Group("/auth")
 		{
-			auth.POST("/register", h.User.Register)
-			auth.POST("/login", h.User.Login)
-			auth.POST("/refresh", h.User.Refresh)
+			authGroup.POST("/register", h.User.Register)
+			authGroup.POST("/login", h.User.Login)
+			authGroup.POST("/refresh", h.User.Refresh)
 		}
 
 		// Users
@@ -53,7 +57,10 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 			users.GET("/:id/collections", h.Collection.GetByUser)
 		}
 
-		// Places — GET /:id returns PlaceDetail (place + rating cache)
+		// Catalogo del formulario (reemplaza /categories)
+		v1.GET("/dimensions", h.Catalog.GetDimensions)
+
+		// Places
 		places := v1.Group("/places")
 		{
 			places.GET("", middleware.Cache(cache, "places"), h.Place.GetAll)
@@ -61,42 +68,48 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 			places.GET("/nearby", middleware.Cache(cache, "nearby"), h.Place.GetNearby)
 			places.GET("/search", h.Place.Search)
 			places.GET("/:id", h.Place.GetByID)
-			places.POST("", middleware.Auth(cfg.JWTSecret), h.Place.Create)
-			places.POST("/from-google", middleware.Auth(cfg.JWTSecret), h.Place.ImportFromGoogle)
-			places.PUT("/:id", middleware.Auth(cfg.JWTSecret), h.Place.Update)
-			places.DELETE("/:id", middleware.Auth(cfg.JWTSecret), h.Place.Delete)
+			places.POST("", auth, h.Place.Create)
+			places.POST("/from-google", auth, h.Place.ImportFromGoogle)
+			places.PUT("/:id", auth, h.Place.Update)
+			places.DELETE("/:id", auth, h.Place.Delete)
 
-			places.GET("/:id/reviews", h.Review.GetByPlace)
+			places.GET("/:id/submissions", h.Submission.GetByPlace)
+			places.GET("/:id/next-question", auth, h.Contribution.NextQuestion)
 		}
 
-		// Reviews — POST creates review + ratings + photos in a single transaction
-		reviews := v1.Group("/reviews")
-		reviews.Use(middleware.Auth(cfg.JWTSecret))
+		// Contributions (contribucion atomica; user_id del token)
+		contributions := v1.Group("/contributions")
+		contributions.Use(auth)
 		{
-			reviews.POST("", h.Review.Create)
-			reviews.DELETE("/:id", h.Review.Delete)
+			contributions.POST("", h.Contribution.Create)
+			contributions.DELETE("/:id", h.Contribution.Delete)
+		}
+
+		// Submissions (valoracion viva del usuario: comentario + fotos)
+		submissions := v1.Group("/submissions")
+		submissions.Use(auth)
+		{
+			submissions.PUT("", h.Submission.Save)
+		}
+
+		// Perfil funcional del usuario (opt-in)
+		me := v1.Group("/me")
+		me.Use(auth)
+		{
+			me.GET("/profile", h.Profile.Get)
+			me.PUT("/profile", h.Profile.Set)
+			me.DELETE("/profile", h.Profile.Delete)
 		}
 
 		// Collections
 		collections := v1.Group("/collections")
-		collections.Use(middleware.Auth(cfg.JWTSecret))
+		collections.Use(auth)
 		{
 			collections.POST("", h.Collection.Create)
 			collections.DELETE("/:id", h.Collection.Delete)
 			collections.GET("/:id/places", h.Collection.GetPlaces)
 			collections.POST("/:id/places/:placeId", h.Collection.AddPlace)
 			collections.DELETE("/:id/places/:placeId", h.Collection.RemovePlace)
-		}
-
-		// Categories
-		categories := v1.Group("/categories")
-		{
-			categories.GET("", h.Category.GetAllCategories)
-			categories.GET("/:id", h.Category.GetCategoryByID)
-			categories.POST("", middleware.Auth(cfg.JWTSecret), h.Category.CreateCategory)
-			categories.GET("/:id/subcategories", h.Category.GetSubcategoriesByCategory)
-			categories.GET("/subcategories", h.Category.GetAllSubcategories)
-			categories.POST("/subcategories", middleware.Auth(cfg.JWTSecret), h.Category.CreateSubcategory)
 		}
 	}
 

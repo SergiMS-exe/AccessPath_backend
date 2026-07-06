@@ -12,7 +12,11 @@ import (
 const (
 	autocompleteURL = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
 	detailsURL      = "https://maps.googleapis.com/maps/api/place/details/json"
-	detailsFields   = "place_id,name,formatted_address,geometry,types"
+	detailsFields   = "place_id,name,formatted_address,geometry,types,business_status"
+
+	// BusinessStatusClosedPermanently marca un sitio cerrado para siempre en
+	// Google Places; no debe importarse a la BD.
+	BusinessStatusClosedPermanently = "CLOSED_PERMANENTLY"
 )
 
 var ErrNoAPIKey = errors.New("google maps api key not configured")
@@ -40,6 +44,8 @@ type PlaceDetails struct {
 	Lat              float64  `json:"lat"`
 	Lng              float64  `json:"lng"`
 	Types            []string `json:"types"`
+	// OPERATIONAL | CLOSED_TEMPORARILY | CLOSED_PERMANENTLY (vacio si Google no lo informa).
+	BusinessStatus string `json:"business_status"`
 }
 
 func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) ([]AutocompleteItem, error) {
@@ -127,6 +133,7 @@ func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*Pl
 			Name             string   `json:"name"`
 			FormattedAddress string   `json:"formatted_address"`
 			Types            []string `json:"types"`
+			BusinessStatus   string   `json:"business_status"`
 			Geometry         struct {
 				Location struct {
 					Lat float64 `json:"lat"`
@@ -150,5 +157,6 @@ func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*Pl
 		Lat:              body.Result.Geometry.Location.Lat,
 		Lng:              body.Result.Geometry.Location.Lng,
 		Types:            body.Result.Types,
+		BusinessStatus:   body.Result.BusinessStatus,
 	}, nil
 }

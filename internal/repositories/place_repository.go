@@ -22,20 +22,10 @@ func NewPlaceRepository(db *pgxpool.Pool) *PlaceRepository {
 const placeColumns = `id, code, name, address, latitude, longitude, description, google_place_id, published, created_by, created_at, updated_at, deleted_at`
 const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.google_place_id, p.published, p.created_by, p.created_at, p.updated_at, p.deleted_at`
 
-const placeWhereFilters = `
-	  AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')
-	  AND ($2::bigint = 0 OR EXISTS (
-	        SELECT 1 FROM place_rating_cache prc
-	        JOIN subcategory s ON s.id = prc.subcategory_id
-	        WHERE prc.place_id = p.id AND s.category_id = $2
-	  ))
-	  AND ($3::numeric = 0 OR (
-	        SELECT COALESCE(AVG(prc.avg_score), 0)
-	        FROM place_rating_cache prc
-	        JOIN subcategory s ON s.id = prc.subcategory_id
-	        WHERE prc.place_id = p.id
-	          AND ($2::bigint = 0 OR s.category_id = $2)
-	  ) >= $3)`
+// aggSelect es la proyeccion comun del join criterion+dimension+cache a CriterionAggRow.
+const aggSelect = `
+	d.id AS dimension_id, d.key AS dimension_key, d.name AS dimension_name, d.sort_order AS dimension_sort,
+	c.id AS criterion_id, c.key AS criterion_key, c.prompt, c.is_blocking, c.profile_tags, c.sort_order AS criterion_sort`
 
 func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, int, error) {
 	if filters.Limit == 0 {
@@ -46,8 +36,9 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*)
 		 FROM place p
-		 WHERE p.deleted_at IS NULL`+placeWhereFilters,
-		filters.Search, filters.CategoryID, filters.MinRating).Scan(&total)
+		 WHERE p.deleted_at IS NULL
+		   AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')`,
+		filters.Search).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -55,10 +46,11 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumnsP+`
 		 FROM place p
-		 WHERE p.deleted_at IS NULL`+placeWhereFilters+`
+		 WHERE p.deleted_at IS NULL
+		   AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')
 		 ORDER BY p.created_at DESC
-		 LIMIT $4 OFFSET $5`,
-		filters.Search, filters.CategoryID, filters.MinRating, filters.Limit, filters.Offset)
+		 LIMIT $2 OFFSET $3`,
+		filters.Search, filters.Limit, filters.Offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -95,6 +87,7 @@ func (r *PlaceRepository) FindByCode(ctx context.Context, code string) (*models.
 	return &place, nil
 }
 
+// FindByBounds devuelve lugares publicados dentro del bounding box (para el mapa).
 func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilter) ([]models.Place, error) {
 	if f.Limit == 0 {
 		f.Limit = 100
@@ -107,14 +100,9 @@ func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilte
 		   AND p.published = TRUE
 		   AND p.latitude  BETWEEN $1 AND $2
 		   AND p.longitude BETWEEN $3 AND $4
-		   AND ($5::bigint = 0 OR EXISTS (
-		         SELECT 1 FROM place_rating_cache prc
-		         JOIN subcategory s ON s.id = prc.subcategory_id
-		         WHERE prc.place_id = p.id AND s.category_id = $5
-		   ))
 		 ORDER BY p.created_at DESC
-		 LIMIT $6`,
-		f.MinLat, f.MaxLat, f.MinLng, f.MaxLng, f.CategoryID, f.Limit)
+		 LIMIT $5`,
+		f.MinLat, f.MaxLat, f.MinLng, f.MaxLng, f.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +162,7 @@ func (r *PlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID
 	return &place, nil
 }
 
-// MarkPublishedTx hace visible un lugar en el mapa tras su primera valoracion.
+// MarkPublishedTx hace visible un lugar en el mapa tras su primera contribucion.
 // Idempotente: solo escribe si aun no estaba publicado.
 func (r *PlaceRepository) MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error {
 	_, err := tx.Exec(ctx,
@@ -204,4 +192,77 @@ func (r *PlaceRepository) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE place SET deleted_at = NOW() WHERE id = $1`, id)
 	return err
+}
+
+// --- Agregacion de accesibilidad ---
+
+// GetAccessibilityRows devuelve TODOS los criterios activos (con su dimension)
+// para un lugar, con los conteos del cache (LEFT JOIN: 0 si no hay datos -> gris).
+// Base del desglose completo de GET /places/:id.
+func (r *PlaceRepository) GetAccessibilityRows(ctx context.Context, placeID int64) ([]models.CriterionAggRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT
+		     $1::bigint AS place_id,`+aggSelect+`,
+		     COALESCE(pcc.n_yes, 0)    AS n_yes,
+		     COALESCE(pcc.n_no, 0)     AS n_no,
+		     COALESCE(pcc.n_unsure, 0) AS n_unsure,
+		     pcc.quality_p50,
+		     COALESCE(pcc.n_photos, 0) AS n_photos,
+		     pcc.last_contribution_at
+		 FROM dimension d
+		 JOIN criterion c ON c.dimension_id = d.id AND c.active = TRUE
+		 LEFT JOIN place_criterion_cache pcc ON pcc.criterion_id = c.id AND pcc.place_id = $1
+		 WHERE d.active = TRUE
+		 ORDER BY d.sort_order, c.sort_order, c.id`,
+		placeID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.CriterionAggRow])
+}
+
+// GetCriterionAggRow devuelve la fila de agregacion de un unico (place, criterion),
+// para el semaforo en vivo tras crear/borrar una contribucion.
+func (r *PlaceRepository) GetCriterionAggRow(ctx context.Context, placeID, criterionID int64) (*models.CriterionAggRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT
+		     $1::bigint AS place_id,`+aggSelect+`,
+		     COALESCE(pcc.n_yes, 0)    AS n_yes,
+		     COALESCE(pcc.n_no, 0)     AS n_no,
+		     COALESCE(pcc.n_unsure, 0) AS n_unsure,
+		     pcc.quality_p50,
+		     COALESCE(pcc.n_photos, 0) AS n_photos,
+		     pcc.last_contribution_at
+		 FROM criterion c
+		 JOIN dimension d ON d.id = c.dimension_id
+		 LEFT JOIN place_criterion_cache pcc ON pcc.criterion_id = c.id AND pcc.place_id = $1
+		 WHERE c.id = $2`,
+		placeID, criterionID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.CriterionAggRow])
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// GetAggRowsByPlaceIDs devuelve solo criterios CON datos (INNER JOIN cache) para
+// un conjunto de lugares, para colorear el mapa. Lugares sin datos no aparecen.
+func (r *PlaceRepository) GetAggRowsByPlaceIDs(ctx context.Context, placeIDs []int64) ([]models.CriterionAggRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT
+		     pcc.place_id,`+aggSelect+`,
+		     pcc.n_yes, pcc.n_no, pcc.n_unsure, pcc.quality_p50, pcc.n_photos, pcc.last_contribution_at
+		 FROM place_criterion_cache pcc
+		 JOIN criterion c ON c.id = pcc.criterion_id AND c.active = TRUE
+		 JOIN dimension d ON d.id = c.dimension_id AND d.active = TRUE
+		 WHERE pcc.place_id = ANY($1)
+		 ORDER BY pcc.place_id, d.sort_order, c.sort_order, c.id`,
+		placeIDs)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.CriterionAggRow])
 }

@@ -1,0 +1,14 @@
+{
+  "_comment": "Umbrales de agregacion y seleccion de preguntas. Valores de arranque (poco volumen); subir con el tiempo. Editable sin recompilar. Ruta via ACCESSIBILITY_CONFIG_PATH.",
+  "confidence_min": 1,
+  "consenso_si": 0.60,
+  "consenso_no": 0.40,
+  "cal_buena": 4.0,
+  "cal_regular": 2.5,
+  "selection": {
+    "relevance_match": 1.0,
+    "relevance_no_match": 0.4,
+    "conflict_bonus": 0.5,
+    "top_k": 3
+  }
+}
