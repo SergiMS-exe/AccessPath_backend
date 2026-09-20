@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"accesspath/pkg/apperr"
 )
 
 const (
@@ -48,9 +50,30 @@ type PlaceDetails struct {
 	BusinessStatus string `json:"business_status"`
 }
 
+// gmapsStatusHandler convierte un status textual de Google en un *apperr.AppError.
+// Cada entrada es la unica fuente de verdad sobre como se traduce un status
+// conocido: anadir un nuevo caso = anadir una linea. Si el status no esta
+// en el map, se considera upstream error generico (502).
+type gmapsStatusHandler func(op, status, errorMessage string) *apperr.AppError
+
+// gmapsStatusHandlers es la tabla de dispatch. Mantenerla cerca de la constante
+// de arriba (en este mismo archivo) facilita extenderla sin tocar la logica
+// del metodo.
+var gmapsStatusHandlers = map[string]gmapsStatusHandler{
+	"REQUEST_DENIED": func(op, status, _ string) *apperr.AppError {
+		return apperr.GmapsRequestDenied(op, fmt.Errorf("status=%s", status))
+	},
+	"OVER_QUERY_LIMIT": func(op, _, _ string) *apperr.AppError {
+		return apperr.GmapsQuotaExceeded(op)
+	},
+	"INVALID_REQUEST": func(op, _, errorMessage string) *apperr.AppError {
+		return apperr.GmapsInvalidRequest(op, errorMessage)
+	},
+}
+
 func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) ([]AutocompleteItem, error) {
 	if c.apiKey == "" {
-		return nil, ErrNoAPIKey
+		return nil, apperr.GmapsNotConfigured("gmaps.Autocomplete")
 	}
 
 	params := url.Values{
@@ -62,18 +85,19 @@ func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) (
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, autocompleteURL+"?"+params.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Autocomplete", err)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Autocomplete", err)
 	}
 	defer resp.Body.Close()
 
 	var body struct {
-		Status      string `json:"status"`
-		Predictions []struct {
+		Status        string `json:"status"`
+		ErrorMessage  string `json:"error_message"`
+		Predictions   []struct {
 			PlaceID     string `json:"place_id"`
 			Description string `json:"description"`
 			Structured  struct {
@@ -84,10 +108,15 @@ func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) (
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Autocomplete", err)
 	}
+
 	if body.Status != "OK" && body.Status != "ZERO_RESULTS" {
-		return nil, fmt.Errorf("google autocomplete: status %s", body.Status)
+		if handler, ok := gmapsStatusHandlers[body.Status]; ok {
+			return nil, handler("gmaps.Autocomplete", body.Status, body.ErrorMessage)
+		}
+		return nil, apperr.GmapsUpstream("gmaps.Autocomplete", body.Status,
+			fmt.Errorf("error_message=%s", body.ErrorMessage))
 	}
 
 	items := make([]AutocompleteItem, 0, len(body.Predictions))
@@ -104,7 +133,7 @@ func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) (
 
 func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*PlaceDetails, error) {
 	if c.apiKey == "" {
-		return nil, ErrNoAPIKey
+		return nil, apperr.GmapsNotConfigured("gmaps.Details")
 	}
 
 	params := url.Values{
@@ -117,18 +146,19 @@ func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*Pl
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, detailsURL+"?"+params.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Details", err)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Details", err)
 	}
 	defer resp.Body.Close()
 
 	var body struct {
-		Status string `json:"status"`
-		Result struct {
+		Status       string `json:"status"`
+		ErrorMessage string `json:"error_message"`
+		Result       struct {
 			PlaceID          string   `json:"place_id"`
 			Name             string   `json:"name"`
 			FormattedAddress string   `json:"formatted_address"`
@@ -144,10 +174,14 @@ func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*Pl
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
+		return nil, apperr.GmapsNetwork("gmaps.Details", err)
 	}
 	if body.Status != "OK" {
-		return nil, fmt.Errorf("google place details: status %s", body.Status)
+		if handler, ok := gmapsStatusHandlers[body.Status]; ok {
+			return nil, handler("gmaps.Details", body.Status, body.ErrorMessage)
+		}
+		return nil, apperr.GmapsUpstream("gmaps.Details", body.Status,
+			fmt.Errorf("error_message=%s", body.ErrorMessage))
 	}
 
 	return &PlaceDetails{
