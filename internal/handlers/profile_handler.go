@@ -1,11 +1,10 @@
 package handlers
 
 import (
-	"errors"
-
 	"accesspath/internal/middleware"
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
 	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -30,12 +29,11 @@ func NewProfileHandler(service *services.ProfileService) *ProfileHandler {
 func (h *ProfileHandler) Get(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("profile.get", "token requerido"))
 		return
 	}
 	profile, err := h.service.Get(c.Request.Context(), userID)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch profile")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, profile)
@@ -54,23 +52,18 @@ func (h *ProfileHandler) Get(c *gin.Context) {
 func (h *ProfileHandler) Set(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("profile.set", "token requerido"))
 		return
 	}
 	var req models.ProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "se requiere consentimiento explicito")
+		Respond(c, apperr.BadRequest("profile.set", "profile.invalid_body",
+			"se requiere consentimiento explicito"))
 		return
 	}
 
 	profile, err := h.service.Set(c.Request.Context(), userID, req)
-	if err != nil {
-		var invalid services.ErrInvalidNeedKey
-		if errors.As(err, &invalid) {
-			response.BadRequest(c, invalid.Error())
-			return
-		}
-		response.InternalError(c, "Failed to save profile")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, profile)
@@ -86,11 +79,10 @@ func (h *ProfileHandler) Set(c *gin.Context) {
 func (h *ProfileHandler) Delete(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("profile.delete", "token requerido"))
 		return
 	}
-	if err := h.service.Delete(c.Request.Context(), userID); err != nil {
-		response.InternalError(c, "Failed to delete profile")
+	if err := h.service.Delete(c.Request.Context(), userID); Respond(c, err) {
 		return
 	}
 	c.Status(204)

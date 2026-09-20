@@ -18,7 +18,9 @@ type UserWithPassword struct {
 }
 
 type CreateUserRequest struct {
-	Username string `json:"username" binding:"required"`
+	// Username es opcional: si llega vacio se genera a partir del email en el
+	// servicio para no obligar al usuario a inventar uno.
+	Username string `json:"username"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
 }

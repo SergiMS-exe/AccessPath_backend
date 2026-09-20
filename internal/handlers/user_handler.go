@@ -8,6 +8,8 @@ import (
 
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
+	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -22,43 +24,17 @@ func NewUserHandler(service *services.UserService, jwtSecret string) *UserHandle
 	return &UserHandler{service: service, jwtSecret: []byte(jwtSecret)}
 }
 
-func (h *UserHandler) Register(c *gin.Context) {
-	var req models.CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	user, err := h.service.Register(c.Request.Context(), req)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, user)
-}
-
-func (h *UserHandler) Login(c *gin.Context) {
-	var req models.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	user, err := h.service.Login(c.Request.Context(), req)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
+// issueTokens genera el par (access + refresh) para un usuario. Usado por
+// Login y Register para que ambos endpoints devuelvan exactamente la misma
+// forma de respuesta y el cliente no necesite una llamada extra tras registrarse.
+func (h *UserHandler) issueTokens(user *models.User) (*models.LoginResponse, *apperr.AppError) {
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	})
 	accessTokenString, err := accessToken.SignedString(h.jwtSecret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al generar token"})
-		return
+		return nil, apperr.Internal("users.tokens", err)
 	}
 
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -68,21 +44,64 @@ func (h *UserHandler) Login(c *gin.Context) {
 	})
 	refreshTokenString, err := refreshToken.SignedString(h.jwtSecret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al generar refresh token"})
-		return
+		return nil, apperr.Internal("users.tokens", err)
 	}
 
-	c.JSON(http.StatusOK, models.LoginResponse{
+	return &models.LoginResponse{
 		Token:        accessTokenString,
 		RefreshToken: refreshTokenString,
 		User:         *user,
-	})
+	}, nil
+}
+
+func (h *UserHandler) Register(c *gin.Context) {
+	var req models.CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Respond(c, apperr.BadRequest("users.register", "users.invalid_body", err.Error()))
+		return
+	}
+
+	user, err := h.service.Register(c.Request.Context(), req)
+	if Respond(c, err) {
+		return
+	}
+
+	// Devolvemos el mismo LoginResponse que Login (access + refresh + user)
+	// directamente, sin envelope {data:...}, igual que el endpoint Login. Asi el
+	// cliente puede usar el mismo codigo de deserializacion y se evita la
+	// doble llamada (register + login) que tenia antes.
+	resp, apierr := h.issueTokens(user)
+	if apierr != nil {
+		Respond(c, apierr)
+		return
+	}
+	c.JSON(http.StatusCreated, resp)
+}
+
+func (h *UserHandler) Login(c *gin.Context) {
+	var req models.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Respond(c, apperr.BadRequest("users.login", "users.invalid_body", err.Error()))
+		return
+	}
+
+	user, err := h.service.Login(c.Request.Context(), req)
+	if Respond(c, err) {
+		return
+	}
+
+	resp, apierr := h.issueTokens(user)
+	if apierr != nil {
+		Respond(c, apierr)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *UserHandler) Refresh(c *gin.Context) {
 	var req models.RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		Respond(c, apperr.BadRequest("users.refresh", "users.invalid_body", err.Error()))
 		return
 	}
 
@@ -93,13 +112,13 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 		return h.jwtSecret, nil
 	})
 	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token invalido"})
+		Respond(c, apperr.Unauthorized("users.refresh", "refresh token invalido"))
 		return
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || claims["type"] != "refresh" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "token invalido"})
+		Respond(c, apperr.Unauthorized("users.refresh", "token invalido"))
 		return
 	}
 
@@ -111,7 +130,7 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	})
 	newAccessTokenString, err := newAccessToken.SignedString(h.jwtSecret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al generar token"})
+		Respond(c, apperr.Internal("users.refresh", err))
 		return
 	}
 
@@ -122,7 +141,7 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	})
 	newRefreshTokenString, err := newRefreshToken.SignedString(h.jwtSecret)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error al generar refresh token"})
+		Respond(c, apperr.Internal("users.refresh", err))
 		return
 	}
 
@@ -135,15 +154,15 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		Respond(c, apperr.BadRequest("users.profile", "users.invalid_id",
+			"Invalid user ID"))
 		return
 	}
 
 	user, err := h.service.GetByID(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	if Respond(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	response.OK(c, user)
 }

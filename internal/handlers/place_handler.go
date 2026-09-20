@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	"accesspath/internal/middleware"
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
 	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -29,11 +29,9 @@ func (h *PlaceHandler) GetAll(c *gin.Context) {
 	}
 
 	result, err := h.service.GetAll(c.Request.Context(), filters)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch places")
+	if Respond(c, err) {
 		return
 	}
-
 	response.OK(c, result)
 }
 
@@ -52,18 +50,21 @@ func (h *PlaceHandler) GetAll(c *gin.Context) {
 // @Failure      500  {object}  map[string]string
 // @Router       /places/map [get]
 func (h *PlaceHandler) GetByBounds(c *gin.Context) {
+	if c.Query("min_lat") == "" || c.Query("max_lat") == "" ||
+		c.Query("min_lng") == "" || c.Query("max_lng") == "" {
+		Respond(c, apperr.BadRequest("places.map", "places.missing_bounds",
+			"min_lat, max_lat, min_lng and max_lng are required"))
+		return
+	}
+
 	minLat := parseFloatOrDefault(c.Query("min_lat"), 0)
 	maxLat := parseFloatOrDefault(c.Query("max_lat"), 0)
 	minLng := parseFloatOrDefault(c.Query("min_lng"), 0)
 	maxLng := parseFloatOrDefault(c.Query("max_lng"), 0)
 
-	if c.Query("min_lat") == "" || c.Query("max_lat") == "" ||
-		c.Query("min_lng") == "" || c.Query("max_lng") == "" {
-		response.BadRequest(c, "min_lat, max_lat, min_lng and max_lng are required")
-		return
-	}
 	if minLat >= maxLat || minLng >= maxLng {
-		response.BadRequest(c, "min_lat must be less than max_lat and min_lng less than max_lng")
+		Respond(c, apperr.BadRequest("places.map", "places.invalid_bounds",
+			"min_lat must be less than max_lat and min_lng less than max_lng"))
 		return
 	}
 
@@ -76,11 +77,9 @@ func (h *PlaceHandler) GetByBounds(c *gin.Context) {
 	}
 
 	places, err := h.service.GetByBounds(c.Request.Context(), filters)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch places")
+	if Respond(c, err) {
 		return
 	}
-
 	response.OK(c, places)
 }
 
@@ -94,11 +93,9 @@ func (h *PlaceHandler) GetNearby(c *gin.Context) {
 	}
 
 	places, err := h.service.GetNearby(c.Request.Context(), filters)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch places")
+	if Respond(c, err) {
 		return
 	}
-
 	response.OK(c, places)
 }
 
@@ -106,30 +103,29 @@ func (h *PlaceHandler) GetNearby(c *gin.Context) {
 func (h *PlaceHandler) GetByID(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid place ID")
+		Respond(c, apperr.BadRequest("places.detail", "places.invalid_id",
+			"Invalid place ID"))
 		return
 	}
 
 	detail, err := h.service.GetByID(c.Request.Context(), id)
-	if err != nil {
-		response.NotFound(c, "Place not found")
+	if Respond(c, err) {
 		return
 	}
-
 	response.OK(c, detail)
 }
 
 func (h *PlaceHandler) Search(c *gin.Context) {
 	q := c.Query("q")
 	if q == "" {
-		response.BadRequest(c, "q is required")
+		Respond(c, apperr.BadRequest("places.search", "places.missing_query",
+			"q is required"))
 		return
 	}
 	session := c.Query("session")
 
 	items, err := h.service.Search(c.Request.Context(), q, session)
-	if err != nil {
-		response.InternalError(c, "Search failed")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, items)
@@ -138,27 +134,18 @@ func (h *PlaceHandler) Search(c *gin.Context) {
 func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
 	var req models.ImportFromGoogleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		Respond(c, apperr.BadRequest("places.import", "places.invalid_body", err.Error()))
 		return
 	}
 
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("places.import", "token requerido"))
 		return
 	}
 
 	place, err := h.service.ImportFromGoogle(c.Request.Context(), req.GooglePlaceID, req.SessionToken, userID)
-	if err != nil {
-		if errors.Is(err, services.ErrGmapsQuotaExceeded) {
-			response.TooManyRequests(c, "Monthly Google Maps quota reached")
-			return
-		}
-		if errors.Is(err, services.ErrPlaceClosedPermanently) {
-			response.BadRequest(c, "Este sitio está cerrado permanentemente")
-			return
-		}
-		response.InternalError(c, "Failed to import place")
+	if Respond(c, err) {
 		return
 	}
 
@@ -168,19 +155,18 @@ func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
 func (h *PlaceHandler) Create(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("places.create", "token requerido"))
 		return
 	}
 	var req models.CreatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		Respond(c, apperr.BadRequest("places.create", "places.invalid_body", err.Error()))
 		return
 	}
 	req.CreatedBy = userID
 
 	place, err := h.service.Create(c.Request.Context(), req)
-	if err != nil {
-		response.InternalError(c, "Failed to create place")
+	if Respond(c, err) {
 		return
 	}
 
@@ -190,19 +176,19 @@ func (h *PlaceHandler) Create(c *gin.Context) {
 func (h *PlaceHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid place ID")
+		Respond(c, apperr.BadRequest("places.update", "places.invalid_id",
+			"Invalid place ID"))
 		return
 	}
 
 	var req models.UpdatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		Respond(c, apperr.BadRequest("places.update", "places.invalid_body", err.Error()))
 		return
 	}
 
 	place, err := h.service.Update(c.Request.Context(), id, req)
-	if err != nil {
-		response.InternalError(c, "Failed to update place")
+	if Respond(c, err) {
 		return
 	}
 
@@ -212,12 +198,12 @@ func (h *PlaceHandler) Update(c *gin.Context) {
 func (h *PlaceHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid place ID")
+		Respond(c, apperr.BadRequest("places.delete", "places.invalid_id",
+			"Invalid place ID"))
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), id); err != nil {
-		response.InternalError(c, "Failed to delete place")
+	if err := h.service.Delete(c.Request.Context(), id); Respond(c, err) {
 		return
 	}
 

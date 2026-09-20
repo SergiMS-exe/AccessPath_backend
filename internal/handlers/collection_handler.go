@@ -1,11 +1,12 @@
 package handlers
 
 import (
-	"net/http"
 	"strconv"
 
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
+	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,107 +19,102 @@ func NewCollectionHandler(service *services.CollectionService) *CollectionHandle
 	return &CollectionHandler{service: service}
 }
 
+func parseID(c *gin.Context, param, what string) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param(param), 10, 64)
+	if err != nil {
+		Respond(c, apperr.BadRequest("collections", "collections.invalid_id",
+			"Invalid "+what+" ID"))
+		return 0, false
+	}
+	return id, true
+}
+
 func (h *CollectionHandler) GetByUser(c *gin.Context) {
-	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+	id, ok := parseID(c, "id", "user")
+	if !ok {
 		return
 	}
 
-	cols, err := h.service.GetByUser(c.Request.Context(), userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch collections"})
+	cols, err := h.service.GetByUser(c.Request.Context(), id)
+	if Respond(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusOK, cols)
+	response.OK(c, cols)
 }
 
 func (h *CollectionHandler) Create(c *gin.Context) {
 	var req models.CreateCollectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		Respond(c, apperr.BadRequest("collections.create", "collections.invalid_body", err.Error()))
 		return
 	}
 
 	col, err := h.service.Create(c.Request.Context(), req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create collection"})
+	if Respond(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, col)
+	response.Created(c, col)
 }
 
 func (h *CollectionHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection ID"})
+	id, ok := parseID(c, "id", "collection")
+	if !ok {
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete collection"})
+	if err := h.service.Delete(c.Request.Context(), id); Respond(c, err) {
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	c.Status(204)
 }
 
 func (h *CollectionHandler) GetPlaces(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection ID"})
+	id, ok := parseID(c, "id", "collection")
+	if !ok {
 		return
 	}
 
 	places, err := h.service.GetPlaces(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch places"})
+	if Respond(c, err) {
 		return
 	}
 
-	c.JSON(http.StatusOK, places)
+	response.OK(c, places)
 }
 
 func (h *CollectionHandler) AddPlace(c *gin.Context) {
-	collectionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection ID"})
+	collectionID, ok := parseID(c, "id", "collection")
+	if !ok {
+		return
+	}
+	placeID, ok := parseID(c, "placeId", "place")
+	if !ok {
 		return
 	}
 
-	placeID, err := strconv.ParseInt(c.Param("placeId"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid place ID"})
+	if err := h.service.AddPlace(c.Request.Context(), collectionID, placeID); Respond(c, err) {
 		return
 	}
 
-	if err := h.service.AddPlace(c.Request.Context(), collectionID, placeID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add place"})
-		return
-	}
-
-	c.Status(http.StatusCreated)
+	c.Status(201)
 }
 
 func (h *CollectionHandler) RemovePlace(c *gin.Context) {
-	collectionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection ID"})
+	collectionID, ok := parseID(c, "id", "collection")
+	if !ok {
+		return
+	}
+	placeID, ok := parseID(c, "placeId", "place")
+	if !ok {
 		return
 	}
 
-	placeID, err := strconv.ParseInt(c.Param("placeId"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid place ID"})
+	if err := h.service.RemovePlace(c.Request.Context(), collectionID, placeID); Respond(c, err) {
 		return
 	}
 
-	if err := h.service.RemovePlace(c.Request.Context(), collectionID, placeID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove place"})
-		return
-	}
-
-	c.Status(http.StatusNoContent)
+	c.Status(204)
 }

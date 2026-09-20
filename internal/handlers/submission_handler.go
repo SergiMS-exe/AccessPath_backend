@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"errors"
 	"strconv"
 
 	"accesspath/internal/middleware"
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
 	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -31,12 +31,12 @@ func NewSubmissionHandler(service *services.SubmissionService) *SubmissionHandle
 func (h *SubmissionHandler) GetByPlace(c *gin.Context) {
 	placeID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid place ID")
+		Respond(c, apperr.BadRequest("submissions.get", "places.invalid_id",
+			"Invalid place ID"))
 		return
 	}
 	submissions, err := h.service.GetByPlace(c.Request.Context(), placeID)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch submissions")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, submissions)
@@ -55,22 +55,17 @@ func (h *SubmissionHandler) GetByPlace(c *gin.Context) {
 func (h *SubmissionHandler) Save(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("submissions.save", "token requerido"))
 		return
 	}
 	var req models.SubmissionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		Respond(c, apperr.BadRequest("submissions.save", "submissions.invalid_body", err.Error()))
 		return
 	}
 
 	submission, err := h.service.Save(c.Request.Context(), userID, req)
-	if err != nil {
-		if errors.Is(err, services.ErrEmptySubmission) {
-			response.BadRequest(c, "se requiere un comentario o al menos una foto")
-			return
-		}
-		response.InternalError(c, "Failed to save submission")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, submission)

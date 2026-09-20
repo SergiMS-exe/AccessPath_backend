@@ -29,6 +29,7 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 	r := gin.New()
 
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())
 	r.Use(middleware.CORS())
 

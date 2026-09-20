@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"errors"
 	"strconv"
 
 	"accesspath/internal/middleware"
 	"accesspath/internal/models"
 	"accesspath/internal/services"
+	"accesspath/pkg/apperr"
 	"accesspath/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -33,18 +33,18 @@ func NewContributionHandler(service *services.ContributionService, questionSvc *
 func (h *ContributionHandler) NextQuestion(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("contributions.next", "token requerido"))
 		return
 	}
 	placeID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid place ID")
+		Respond(c, apperr.BadRequest("contributions.next", "places.invalid_id",
+			"Invalid place ID"))
 		return
 	}
 
 	next, err := h.questionSvc.Next(c.Request.Context(), userID, placeID)
-	if err != nil {
-		response.InternalError(c, "Failed to compute next question")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, next)
@@ -63,22 +63,17 @@ func (h *ContributionHandler) NextQuestion(c *gin.Context) {
 func (h *ContributionHandler) Create(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("contributions.create", "token requerido"))
 		return
 	}
 	var req models.ContributionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		Respond(c, apperr.BadRequest("contributions.create", "contributions.invalid_body", err.Error()))
 		return
 	}
 
 	result, err := h.service.Create(c.Request.Context(), userID, req)
-	if err != nil {
-		if errors.Is(err, services.ErrOptionMismatch) {
-			response.BadRequest(c, "answer option does not belong to criterion")
-			return
-		}
-		response.InternalError(c, "Failed to create contribution")
+	if Respond(c, err) {
 		return
 	}
 	response.Created(c, result)
@@ -96,25 +91,18 @@ func (h *ContributionHandler) Create(c *gin.Context) {
 func (h *ContributionHandler) Delete(c *gin.Context) {
 	userID, ok := middleware.UserID(c)
 	if !ok {
-		response.Unauthorized(c, "token requerido")
+		Respond(c, apperr.Unauthorized("contributions.delete", "token requerido"))
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		response.BadRequest(c, "Invalid contribution ID")
+		Respond(c, apperr.BadRequest("contributions.delete", "contributions.invalid_id",
+			"Invalid contribution ID"))
 		return
 	}
 
 	result, err := h.service.Delete(c.Request.Context(), userID, id)
-	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrContributionNotFound):
-			response.NotFound(c, "Contribution not found")
-		case errors.Is(err, services.ErrNotOwner):
-			response.Unauthorized(c, "no autorizado")
-		default:
-			response.InternalError(c, "Failed to delete contribution")
-		}
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, result)

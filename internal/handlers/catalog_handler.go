@@ -25,8 +25,7 @@ func NewCatalogHandler(service *services.CatalogService) *CatalogHandler {
 // @Router       /dimensions [get]
 func (h *CatalogHandler) GetDimensions(c *gin.Context) {
 	catalog, err := h.service.GetCatalog(c.Request.Context())
-	if err != nil {
-		response.InternalError(c, "Failed to fetch catalog")
+	if Respond(c, err) {
 		return
 	}
 	response.OK(c, catalog)
