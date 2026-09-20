@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,6 +34,11 @@ import (
 )
 
 func main() {
+	// 0. Configurar logger estructurado (slog).
+	//    Dev  → texto con nivel, legible a ojo.
+	//    Prod → JSON, una linea por evento, parseable por cualquier colector.
+	initLogger(os.Getenv("APP_ENV") == "production")
+
 	// 1. Cargar configuración
 	cfg := config.Load()
 
@@ -102,4 +108,41 @@ func main() {
 	}
 
 	log.Println("servidor apagado correctamente")
+}
+
+// initLogger configura el handler por defecto de slog. Ademas redirige la
+// salida del package log estandar (log.Printf/log.Println) para que los
+// modulos que aun no usan slog se integren en el mismo flujo.
+func initLogger(json bool) {
+	var h slog.Handler
+	if json {
+		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	} else {
+		h = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+	}
+	logger := slog.New(h)
+	slog.SetDefault(logger)
+
+	// Redirige el package log estandar a slog, para no perder los logs de
+	// codigo legacy (database, redis, minio, etc).
+	slog.SetLogLoggerLevel(slog.LevelInfo)
+	log.SetOutput(slogLogWriter{logger})
+}
+
+// slogLogWriter implementa io.Writer para que log.Printf pase por slog.
+// Cada Write genera una linea a nivel INFO con msg=stdlib.
+type slogLogWriter struct{ logger *slog.Logger }
+
+func (w slogLogWriter) Write(p []byte) (int, error) {
+	msg := string(p)
+	// log.Printf/log.Println anaden \n al final; lo recortamos para no duplicar.
+	if n := len(msg); n > 0 && msg[n-1] == '\n' {
+		msg = msg[:n-1]
+	}
+	w.logger.Info("stdlib", slog.String("msg", msg))
+	return len(p), nil
 }
