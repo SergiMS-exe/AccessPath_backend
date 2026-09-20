@@ -62,9 +62,23 @@ services:
       retries: 5
 
   # Solo se levanta con: docker compose --profile full up
+  #
+  # Imagen: ghcr.io/<owner>/accesspath-backend:main
+  # El workflow .github/workflows/docker-publish.yml construye y pushea esta
+  # imagen a GitHub Container Registry en cada push a main.
+  #
+  # Para que el `docker pull` funcione sin autenticarse en el host donde se
+  # ejecuta este compose, el package debe estar publico en GitHub:
+  #   https://github.com/users/<owner>/packages/container/accesspath-backend/settings
+  #   -> Change visibility -> Public
+  # Si prefieres dejarlo privado, el host debera hacer `echo $PAT | docker
+  # login ghcr.io -u <user> --password-stdin` antes de levantar el compose.
   api:
     profiles: ["full"]
-    build: .
+    image: ghcr.io/sergims-exe/accesspath-backend:main
+    # Forzar pull para que `docker compose up` siempre coja la imagen mas
+    # reciente, no use la cache local.
+    pull_policy: always
     container_name: accesspath_api
     depends_on:
       postgres:
