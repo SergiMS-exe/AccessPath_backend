@@ -4,6 +4,8 @@ networks:
   accesspath_network:
     internal: true       # red privada entre contenedores
 
+# Levantar con: docker compose --profile full --env-file .env up -d --build
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -61,13 +63,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # Solo se levanta con: docker compose --profile full up
-  # Imagen pre-construida por .github/workflows/docker-publish.yml.
-  # Requiere el package publico en GHCR (o docker login ghcr.io previo).
+  # Perfil full; construir local porque el tag :main de GHCR puede no existir
   api:
     profiles: ["full"]
-    image: ghcr.io/sergims-exe/accesspath-backend:main
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/sergims-exe/accesspath-backend:local
     container_name: accesspath_api
     depends_on:
       postgres:

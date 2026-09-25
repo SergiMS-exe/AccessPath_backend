@@ -2,11 +2,10 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
-# Descargar dependencias primero (aprovecha caché de Docker)
+# Cache de capas
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copiar código fuente y compilar
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /app/bin/server ./cmd/server
 
@@ -14,9 +13,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /app/bin/ser
 FROM alpine:3.21
 WORKDIR /app
 
-# Certificados TLS para conexiones externas (PostgreSQL, etc.)
+# Certificados TLS para conexiones externas
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /app/bin/server .
+
+# .env esta gitignored pero vive en el build context; godotenv lo lee al arrancar
+COPY .env /app/.env
 
 EXPOSE 8080
 CMD ["./server"]
