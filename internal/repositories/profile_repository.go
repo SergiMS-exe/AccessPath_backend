@@ -10,16 +10,26 @@ import (
 
 // ProfileRepository gestiona las necesidades funcionales y el consentimiento.
 // El consentimiento vive en "user".accessibility_profile_consent_at.
-type ProfileRepository struct {
+type ProfileRepository interface {
+	GetNeeds(ctx context.Context, userID int64) ([]string, error)
+	GetConsent(ctx context.Context, userID int64) (*time.Time, error)
+	ReplaceNeedsTx(ctx context.Context, tx pgx.Tx, userID int64, needs []string) error
+	SetConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error
+	ClearConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error
+}
+
+type pgProfileRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewProfileRepository(db *pgxpool.Pool) *ProfileRepository {
-	return &ProfileRepository{db: db}
+func NewProfileRepository(db *pgxpool.Pool) ProfileRepository {
+	return &pgProfileRepository{db: db}
 }
 
+var _ ProfileRepository = (*pgProfileRepository)(nil)
+
 // GetNeeds devuelve las need_key elegidas por el usuario.
-func (r *ProfileRepository) GetNeeds(ctx context.Context, userID int64) ([]string, error) {
+func (r *pgProfileRepository) GetNeeds(ctx context.Context, userID int64) ([]string, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT need_key FROM user_profile_need WHERE user_id = $1 ORDER BY need_key`, userID)
 	if err != nil {
@@ -29,7 +39,7 @@ func (r *ProfileRepository) GetNeeds(ctx context.Context, userID int64) ([]strin
 }
 
 // GetConsent devuelve el timestamp de consentimiento (NULL si no lo dio).
-func (r *ProfileRepository) GetConsent(ctx context.Context, userID int64) (*time.Time, error) {
+func (r *pgProfileRepository) GetConsent(ctx context.Context, userID int64) (*time.Time, error) {
 	var consentAt *time.Time
 	err := r.db.QueryRow(ctx,
 		`SELECT accessibility_profile_consent_at FROM "user" WHERE id = $1 AND deleted_at IS NULL`, userID).
@@ -41,7 +51,7 @@ func (r *ProfileRepository) GetConsent(ctx context.Context, userID int64) (*time
 }
 
 // ReplaceNeedsTx borra las necesidades actuales e inserta el nuevo conjunto.
-func (r *ProfileRepository) ReplaceNeedsTx(ctx context.Context, tx pgx.Tx, userID int64, needs []string) error {
+func (r *pgProfileRepository) ReplaceNeedsTx(ctx context.Context, tx pgx.Tx, userID int64, needs []string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM user_profile_need WHERE user_id = $1`, userID); err != nil {
 		return err
 	}
@@ -57,14 +67,14 @@ func (r *ProfileRepository) ReplaceNeedsTx(ctx context.Context, tx pgx.Tx, userI
 }
 
 // SetConsentTx marca el consentimiento explicito (ahora).
-func (r *ProfileRepository) SetConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error {
+func (r *pgProfileRepository) SetConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE "user" SET accessibility_profile_consent_at = NOW(), updated_at = NOW() WHERE id = $1`, userID)
 	return err
 }
 
 // ClearConsentTx retira el consentimiento (al borrar el perfil).
-func (r *ProfileRepository) ClearConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error {
+func (r *pgProfileRepository) ClearConsentTx(ctx context.Context, tx pgx.Tx, userID int64) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE "user" SET accessibility_profile_consent_at = NULL, updated_at = NOW() WHERE id = $1`, userID)
 	return err

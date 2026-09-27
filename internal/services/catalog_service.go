@@ -8,14 +8,20 @@ import (
 )
 
 // CatalogService expone el catalogo del formulario (dimensiones + criterios + opciones).
-type CatalogService struct {
-	repo *repositories.CatalogRepository
+type CatalogService interface {
+	GetCatalog(ctx context.Context) ([]models.DimensionDetail, error)
 }
 
-func NewCatalogService(repo *repositories.CatalogRepository) *CatalogService {
-	return &CatalogService{repo: repo}
+type pgCatalogService struct {
+	repo repositories.CatalogRepository
 }
 
-func (s *CatalogService) GetCatalog(ctx context.Context) ([]models.DimensionDetail, error) {
+func NewCatalogService(repo repositories.CatalogRepository) CatalogService {
+	return &pgCatalogService{repo: repo}
+}
+
+var _ CatalogService = (*pgCatalogService)(nil)
+
+func (s *pgCatalogService) GetCatalog(ctx context.Context) ([]models.DimensionDetail, error) {
 	return s.repo.GetCatalog(ctx)
 }

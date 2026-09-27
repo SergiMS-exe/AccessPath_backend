@@ -11,24 +11,28 @@ import (
 	"accesspath/internal/repositories"
 )
 
-type QuestionService struct {
+type QuestionService interface {
+	Next(ctx context.Context, userID, placeID int64) (*models.NextQuestionResponse, error)
+}
+
+type pgQuestionService struct {
 	cfg         *config.AccessibilityThresholds
-	catalogRepo *repositories.CatalogRepository
-	placeRepo   *repositories.PlaceRepository
-	contribRepo *repositories.ContributionRepository
-	profileRepo *repositories.ProfileRepository
-	accSvc      *AccessibilityService
+	catalogRepo repositories.CatalogRepository
+	placeRepo   repositories.PlaceRepository
+	contribRepo repositories.ContributionRepository
+	profileRepo repositories.ProfileRepository
+	accSvc      AccessibilityService
 }
 
 func NewQuestionService(
 	cfg *config.AccessibilityThresholds,
-	catalogRepo *repositories.CatalogRepository,
-	placeRepo *repositories.PlaceRepository,
-	contribRepo *repositories.ContributionRepository,
-	profileRepo *repositories.ProfileRepository,
-	accSvc *AccessibilityService,
-) *QuestionService {
-	return &QuestionService{
+	catalogRepo repositories.CatalogRepository,
+	placeRepo repositories.PlaceRepository,
+	contribRepo repositories.ContributionRepository,
+	profileRepo repositories.ProfileRepository,
+	accSvc AccessibilityService,
+) QuestionService {
+	return &pgQuestionService{
 		cfg:         cfg,
 		catalogRepo: catalogRepo,
 		placeRepo:   placeRepo,
@@ -37,6 +41,8 @@ func NewQuestionService(
 		accSvc:      accSvc,
 	}
 }
+
+var _ QuestionService = (*pgQuestionService)(nil)
 
 type candidate struct {
 	criterion models.Criterion
@@ -48,7 +54,7 @@ type candidate struct {
 // depends_on, perfil, exclusion de respondidos y prioridad de gris/conflicto.
 // No hay decaimiento ni re-pregunta por antiguedad. Devuelve una respuesta
 // vacia si no hay nada util que preguntar.
-func (s *QuestionService) Next(ctx context.Context, userID, placeID int64) (*models.NextQuestionResponse, error) {
+func (s *pgQuestionService) Next(ctx context.Context, userID, placeID int64) (*models.NextQuestionResponse, error) {
 	catalog, err := s.catalogRepo.GetCatalog(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("question: catalog: %w", err)
@@ -164,7 +170,7 @@ func (s *QuestionService) Next(ctx context.Context, userID, placeID int64) (*mod
 // existsPositive indica si el criterio del que se depende tiene exists=true, ya
 // sea por respuesta propia del usuario o por consenso del lugar (estado no rojo
 // ni gris).
-func (s *QuestionService) existsPositive(depID int64, answered map[int64]models.AnsweredContribution, stateByCrit map[int64]models.AccessibilityState) bool {
+func (s *pgQuestionService) existsPositive(depID int64, answered map[int64]models.AnsweredContribution, stateByCrit map[int64]models.AccessibilityState) bool {
 	if a, ok := answered[depID]; ok && a.ExistsFlag != nil && *a.ExistsFlag {
 		return true
 	}

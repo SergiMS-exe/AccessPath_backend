@@ -16,20 +16,25 @@ import (
 // ErrEmptySubmission se devuelve si no hay comentario ni fotos: no hay nada que envolver.
 var ErrEmptySubmission = errors.New("submission requires a comment or at least one photo")
 
-type SubmissionService struct {
+type SubmissionService interface {
+	Save(ctx context.Context, userID int64, req models.SubmissionRequest) (*models.Submission, error)
+	GetByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error)
+}
+
+type pgSubmissionService struct {
 	db             *pgxpool.Pool
-	submissionRepo *repositories.SubmissionRepository
-	photoRepo      *repositories.PhotoRepository
-	photoSvc       *PhotoService
+	submissionRepo repositories.SubmissionRepository
+	photoRepo      repositories.PhotoRepository
+	photoSvc       PhotoServiceInterface
 }
 
 func NewSubmissionService(
 	db *pgxpool.Pool,
-	submissionRepo *repositories.SubmissionRepository,
-	photoRepo *repositories.PhotoRepository,
-	photoSvc *PhotoService,
-) *SubmissionService {
-	return &SubmissionService{
+	submissionRepo repositories.SubmissionRepository,
+	photoRepo repositories.PhotoRepository,
+	photoSvc PhotoServiceInterface,
+) SubmissionService {
+	return &pgSubmissionService{
 		db:             db,
 		submissionRepo: submissionRepo,
 		photoRepo:      photoRepo,
@@ -37,10 +42,12 @@ func NewSubmissionService(
 	}
 }
 
+var _ SubmissionService = (*pgSubmissionService)(nil)
+
 // Save hace get-or-create de la valoracion viva del usuario para el lugar, fija
 // el comentario (si viene) y sube las fotos adjuntas, todo en una TX. Semantica
 // idempotente de PUT: la submission puede existir ya (creada al contribuir).
-func (s *SubmissionService) Save(ctx context.Context, userID int64, req models.SubmissionRequest) (*models.Submission, error) {
+func (s *pgSubmissionService) Save(ctx context.Context, userID int64, req models.SubmissionRequest) (*models.Submission, error) {
 	hasComment := req.Comment != nil && strings.TrimSpace(*req.Comment) != ""
 	if !hasComment && len(req.Photos) == 0 {
 		return nil, ErrEmptySubmission
@@ -85,7 +92,7 @@ func (s *SubmissionService) Save(ctx context.Context, userID int64, req models.S
 }
 
 // GetByPlace devuelve los comentarios + fotos de un lugar ("que cuenta la gente").
-func (s *SubmissionService) GetByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error) {
+func (s *pgSubmissionService) GetByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error) {
 	submissions, err := s.submissionRepo.FindByPlace(ctx, placeID)
 	if err != nil {
 		return nil, err

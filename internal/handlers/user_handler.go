@@ -16,11 +16,11 @@ import (
 )
 
 type UserHandler struct {
-	service   *services.UserService
+	service   services.UserService
 	jwtSecret []byte
 }
 
-func NewUserHandler(service *services.UserService, jwtSecret string) *UserHandler {
+func NewUserHandler(service services.UserService, jwtSecret string) *UserHandler {
 	return &UserHandler{service: service, jwtSecret: []byte(jwtSecret)}
 }
 

@@ -13,22 +13,33 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
+// PhotoServiceInterface define el contrato que SubmissionService consume del
+// servicio de fotos. La implementacion (pgPhotoService) es privada y la usan
+// los handlers y servicios en produccion; los tests pueden sustituirla.
+type PhotoServiceInterface interface {
+	Upload(ctx context.Context, data []byte) (url, objectKey string, err error)
+}
+
 // PhotoService handles image validation, WebP conversion and MinIO upload.
 // It does NOT write to the database; callers must persist the returned URL
 // via PhotoRepository.SaveTx inside their own transaction.
-type PhotoService struct {
+type pgPhotoService struct {
 	minio         *minio.Client
 	bucket        string
 	publicBaseURL string // resoluble desde el cliente; vacio => endpoint interno (dev)
 }
 
-func NewPhotoService(minioClient *minio.Client, bucket, publicBaseURL string) *PhotoService {
-	return &PhotoService{minio: minioClient, bucket: bucket, publicBaseURL: publicBaseURL}
+// NewPhotoService conserva el nombre historico para no romper el wiring en
+// app.go. Devuelve la interface PhotoServiceInterface.
+func NewPhotoService(minioClient *minio.Client, bucket, publicBaseURL string) PhotoServiceInterface {
+	return &pgPhotoService{minio: minioClient, bucket: bucket, publicBaseURL: publicBaseURL}
 }
+
+var _ PhotoServiceInterface = (*pgPhotoService)(nil)
 
 // Upload validates raw image bytes, re-encodes them as JPEG and uploads to MinIO.
 // Returns the public object URL and the object key on success.
-func (s *PhotoService) Upload(ctx context.Context, data []byte) (url, objectKey string, err error) {
+func (s *pgPhotoService) Upload(ctx context.Context, data []byte) (url, objectKey string, err error) {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", "", fmt.Errorf("photo: unsupported or invalid image: %w", err)

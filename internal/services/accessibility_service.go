@@ -7,13 +7,22 @@ import (
 
 // AccessibilityService deriva estado (semaforo) y confianza a partir de los
 // conteos del cache. Logica pura; umbrales desde config externo (nunca inline).
-type AccessibilityService struct {
+type AccessibilityService interface {
+	DeriveCriterion(row models.CriterionAggRow) models.CriterionScore
+	BuildDimensions(rows []models.CriterionAggRow) []models.DimensionScore
+	OverallState(dims []models.DimensionScore) models.AccessibilityState
+	BuildPlaceAccessibility(rows []models.CriterionAggRow) models.PlaceAccessibility
+}
+
+type pgAccessibilityService struct {
 	cfg *config.AccessibilityThresholds
 }
 
-func NewAccessibilityService(cfg *config.AccessibilityThresholds) *AccessibilityService {
-	return &AccessibilityService{cfg: cfg}
+func NewAccessibilityService(cfg *config.AccessibilityThresholds) AccessibilityService {
+	return &pgAccessibilityService{cfg: cfg}
 }
+
+var _ AccessibilityService = (*pgAccessibilityService)(nil)
 
 // severity ordena estados para el rollup (peor = mayor). NoData no participa.
 func severity(s models.AccessibilityState) int {
@@ -30,7 +39,7 @@ func severity(s models.AccessibilityState) int {
 }
 
 // DeriveCriterion aplica las reglas de la seccion 3 a una fila de agregacion.
-func (s *AccessibilityService) DeriveCriterion(row models.CriterionAggRow) models.CriterionScore {
+func (s *pgAccessibilityService) DeriveCriterion(row models.CriterionAggRow) models.CriterionScore {
 	t := s.cfg
 	defined := row.NYes + row.NNo
 
@@ -74,7 +83,7 @@ func (s *AccessibilityService) DeriveCriterion(row models.CriterionAggRow) model
 
 // confidence calcula el eje de confianza (no altera el color). La recencia
 // (last_contribution_at) se expone como dato informativo, nunca como penalizacion.
-func (s *AccessibilityService) confidence(row models.CriterionAggRow, defined int) models.Confidence {
+func (s *pgAccessibilityService) confidence(row models.CriterionAggRow, defined int) models.Confidence {
 	c := models.Confidence{
 		NDefined:           defined,
 		NUnsure:            row.NUnsure,
@@ -105,7 +114,7 @@ func (s *AccessibilityService) confidence(row models.CriterionAggRow, defined in
 
 // BuildDimensions agrupa las filas por dimension (ya vienen ordenadas), deriva
 // cada criterio y hace el rollup por dimension.
-func (s *AccessibilityService) BuildDimensions(rows []models.CriterionAggRow) []models.DimensionScore {
+func (s *pgAccessibilityService) BuildDimensions(rows []models.CriterionAggRow) []models.DimensionScore {
 	dims := []models.DimensionScore{}
 	index := map[int64]int{}
 
@@ -133,7 +142,7 @@ func (s *AccessibilityService) BuildDimensions(rows []models.CriterionAggRow) []
 // rollup fija el estado de la dimension: peor estado confirmado entre los
 // criterios bloqueantes con datos; si no hay bloqueantes con datos, entre todos
 // los criterios con datos. Los criterios sin datos no arrastran a rojo.
-func (s *AccessibilityService) rollup(dim *models.DimensionScore) {
+func (s *pgAccessibilityService) rollup(dim *models.DimensionScore) {
 	var withData, blocking []models.CriterionScore
 	for _, cr := range dim.Criteria {
 		if cr.State == models.StateNoData {
@@ -169,7 +178,7 @@ func (s *AccessibilityService) rollup(dim *models.DimensionScore) {
 
 // OverallState es el estado global del lugar (peor dimension con datos), para el
 // color del marcador en el mapa.
-func (s *AccessibilityService) OverallState(dims []models.DimensionScore) models.AccessibilityState {
+func (s *pgAccessibilityService) OverallState(dims []models.DimensionScore) models.AccessibilityState {
 	worst := models.StateNoData
 	for _, d := range dims {
 		if d.State == models.StateNoData {
@@ -183,7 +192,7 @@ func (s *AccessibilityService) OverallState(dims []models.DimensionScore) models
 }
 
 // BuildPlaceAccessibility ensambla el bloque completo para el detalle.
-func (s *AccessibilityService) BuildPlaceAccessibility(rows []models.CriterionAggRow) models.PlaceAccessibility {
+func (s *pgAccessibilityService) BuildPlaceAccessibility(rows []models.CriterionAggRow) models.PlaceAccessibility {
 	dims := s.BuildDimensions(rows)
 	return models.PlaceAccessibility{
 		Dimensions:   dims,

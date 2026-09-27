@@ -19,7 +19,7 @@ func BuildHandlers(db *pgxpool.Pool, minioClient *minio.Client, cfg *config.Conf
 	photoSvc := services.NewPhotoService(minioClient, cfg.MinioBucket, cfg.MinioPublicBaseURL)
 	submissionSvc := services.NewSubmissionService(db, repos.Submission, repos.Photo, photoSvc)
 
-	var gmapsClient *gmaps.Client
+	var gmapsClient gmaps.Client
 	if cfg.GMapsAPIKey != "" {
 		gmapsClient = gmaps.New(cfg.GMapsAPIKey)
 	}

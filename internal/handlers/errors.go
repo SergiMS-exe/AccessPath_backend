@@ -13,8 +13,8 @@ import (
 // que hay que construir cuando el handler los recibe. Mantener esto como un
 // slice + loop evita un switch y permite extenderlo solo anadiendo entradas.
 type serviceErrorMapping struct {
-	target  error                       // sentinel o *T para errors.As (documental)
-	matcher func(err error) bool        // error.Is/As concreto
+	target  error                // sentinel o *T para errors.As (documental)
+	matcher func(err error) bool // error.Is/As concreto
 	build   func(op string, err error) *apperr.AppError
 }
 
@@ -110,8 +110,10 @@ var serviceErrorMappings = []serviceErrorMapping{
 	},
 }
 
-// matchServiceError recorre el registry buscando el primer match.
-func matchServiceError(err error) (func(op string, err error) *apperr.AppError, bool) {
+// MatchServiceError recorre el registry buscando el primer match. Exportada
+// para tests dedicados en tests/ que verifican que cada sentinel se mapea al
+// AppError correcto.
+func MatchServiceError(err error) (func(op string, err error) *apperr.AppError, bool) {
 	for _, m := range serviceErrorMappings {
 		if m.matcher(err) {
 			return m.build, true
@@ -122,10 +124,10 @@ func matchServiceError(err error) (func(op string, err error) *apperr.AppError, 
 
 // Respond es el punto de entrada unico desde los handlers. Clasifica `err`:
 //
-//   1. Si es nil, no hace nada y devuelve false.
-//   2. Si matchea un sentinel de services, construye el *AppError
-//      correspondiente.
-//   3. Si no, lo trata como Internal 500 (conservando la causa).
+//  1. Si es nil, no hace nada y devuelve false.
+//  2. Si matchea un sentinel de services, construye el *AppError
+//     correspondiente.
+//  3. Si no, lo trata como Internal 500 (conservando la causa).
 //
 // En todos los casos registra un log estructurado y escribe el envelope de
 // respuesta. Devuelve true si respondio (utile para `if Respond(c,err){return}`).
@@ -141,7 +143,7 @@ func Respond(c *gin.Context, err error) bool {
 		return true
 	}
 
-	if build, ok := matchServiceError(err); ok {
+	if build, ok := MatchServiceError(err); ok {
 		ae = build(opFromRequest(c), err)
 	} else {
 		ae = apperr.Internal(opFromRequest(c), err)

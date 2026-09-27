@@ -9,13 +9,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type PlaceRepository struct {
+// PlaceRepository define las operaciones del repositorio de lugares que
+// pueden invocar los servicios. La implementacion concreta es privada.
+type PlaceRepository interface {
+	FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, int, error)
+	FindByID(ctx context.Context, id int64) (*models.Place, error)
+	FindByCode(ctx context.Context, code string) (*models.Place, error)
+	FindByBounds(ctx context.Context, f models.BoundsFilter) ([]models.Place, error)
+	FindNearby(ctx context.Context, f models.NearbyFilter) ([]models.PlaceWithDistance, error)
+	Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
+	FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error)
+	MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error
+	Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error)
+	Delete(ctx context.Context, id int64) error
+	GetAccessibilityRows(ctx context.Context, placeID int64) ([]models.CriterionAggRow, error)
+	GetCriterionAggRow(ctx context.Context, placeID, criterionID int64) (*models.CriterionAggRow, error)
+	GetAggRowsByPlaceIDs(ctx context.Context, placeIDs []int64) ([]models.CriterionAggRow, error)
+}
+
+type pgPlaceRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewPlaceRepository(db *pgxpool.Pool) *PlaceRepository {
-	return &PlaceRepository{db: db}
+func NewPlaceRepository(db *pgxpool.Pool) PlaceRepository {
+	return &pgPlaceRepository{db: db}
 }
+
+var _ PlaceRepository = (*pgPlaceRepository)(nil)
 
 // Listas de columnas reutilizables. El escaneo a struct es por nombre (tags `db`),
 // asi que el ORDEN aqui no tiene que coincidir con el de los campos del struct.
@@ -27,7 +47,7 @@ const aggSelect = `
 	d.id AS dimension_id, d.key AS dimension_key, d.name AS dimension_name, d.sort_order AS dimension_sort,
 	c.id AS criterion_id, c.key AS criterion_key, c.prompt, c.is_blocking, c.profile_tags, c.sort_order AS criterion_sort`
 
-func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, int, error) {
+func (r *pgPlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilters) ([]models.Place, int, error) {
 	if filters.Limit == 0 {
 		filters.Limit = 20
 	}
@@ -61,7 +81,7 @@ func (r *PlaceRepository) FindAll(ctx context.Context, filters models.PlaceFilte
 	return places, total, nil
 }
 
-func (r *PlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place, error) {
+func (r *pgPlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumns+` FROM place WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
@@ -74,7 +94,7 @@ func (r *PlaceRepository) FindByID(ctx context.Context, id int64) (*models.Place
 	return &place, nil
 }
 
-func (r *PlaceRepository) FindByCode(ctx context.Context, code string) (*models.Place, error) {
+func (r *pgPlaceRepository) FindByCode(ctx context.Context, code string) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumns+` FROM place WHERE code = $1 AND deleted_at IS NULL`, code)
 	if err != nil {
@@ -88,7 +108,7 @@ func (r *PlaceRepository) FindByCode(ctx context.Context, code string) (*models.
 }
 
 // FindByBounds devuelve lugares publicados dentro del bounding box (para el mapa).
-func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilter) ([]models.Place, error) {
+func (r *pgPlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilter) ([]models.Place, error) {
 	if f.Limit == 0 {
 		f.Limit = 100
 	}
@@ -109,7 +129,7 @@ func (r *PlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFilte
 	return pgx.CollectRows(rows, pgx.RowToStructByName[models.Place])
 }
 
-func (r *PlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter) ([]models.PlaceWithDistance, error) {
+func (r *pgPlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter) ([]models.PlaceWithDistance, error) {
 	if f.Limit == 0 {
 		f.Limit = 20
 	}
@@ -132,7 +152,7 @@ func (r *PlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilter)
 	return pgx.CollectRows(rows, pgx.RowToStructByName[models.PlaceWithDistance])
 }
 
-func (r *PlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
+func (r *pgPlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
 		`INSERT INTO place (name, address, latitude, longitude, description, google_place_id, created_by)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -148,7 +168,7 @@ func (r *PlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequ
 	return &place, nil
 }
 
-func (r *PlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error) {
+func (r *pgPlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+placeColumns+` FROM place WHERE google_place_id = $1 AND deleted_at IS NULL`,
 		googlePlaceID)
@@ -164,14 +184,14 @@ func (r *PlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID
 
 // MarkPublishedTx hace visible un lugar en el mapa tras su primera contribucion.
 // Idempotente: solo escribe si aun no estaba publicado.
-func (r *PlaceRepository) MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error {
+func (r *pgPlaceRepository) MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE place SET published = TRUE, updated_at = NOW()
 		 WHERE id = $1 AND published = FALSE`, placeID)
 	return err
 }
 
-func (r *PlaceRepository) Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error) {
+func (r *pgPlaceRepository) Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
 		`UPDATE place
 		 SET name = $2, address = $3, latitude = $4, longitude = $5, description = $6, updated_at = NOW()
@@ -188,7 +208,7 @@ func (r *PlaceRepository) Update(ctx context.Context, id int64, req models.Updat
 	return &place, nil
 }
 
-func (r *PlaceRepository) Delete(ctx context.Context, id int64) error {
+func (r *pgPlaceRepository) Delete(ctx context.Context, id int64) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE place SET deleted_at = NOW() WHERE id = $1`, id)
 	return err
@@ -199,7 +219,7 @@ func (r *PlaceRepository) Delete(ctx context.Context, id int64) error {
 // GetAccessibilityRows devuelve TODOS los criterios activos (con su dimension)
 // para un lugar, con los conteos del cache (LEFT JOIN: 0 si no hay datos -> gris).
 // Base del desglose completo de GET /places/:id.
-func (r *PlaceRepository) GetAccessibilityRows(ctx context.Context, placeID int64) ([]models.CriterionAggRow, error) {
+func (r *pgPlaceRepository) GetAccessibilityRows(ctx context.Context, placeID int64) ([]models.CriterionAggRow, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT
 		     $1::bigint AS place_id,`+aggSelect+`,
@@ -223,7 +243,7 @@ func (r *PlaceRepository) GetAccessibilityRows(ctx context.Context, placeID int6
 
 // GetCriterionAggRow devuelve la fila de agregacion de un unico (place, criterion),
 // para el semaforo en vivo tras crear/borrar una contribucion.
-func (r *PlaceRepository) GetCriterionAggRow(ctx context.Context, placeID, criterionID int64) (*models.CriterionAggRow, error) {
+func (r *pgPlaceRepository) GetCriterionAggRow(ctx context.Context, placeID, criterionID int64) (*models.CriterionAggRow, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT
 		     $1::bigint AS place_id,`+aggSelect+`,
@@ -250,7 +270,7 @@ func (r *PlaceRepository) GetCriterionAggRow(ctx context.Context, placeID, crite
 
 // GetAggRowsByPlaceIDs devuelve solo criterios CON datos (INNER JOIN cache) para
 // un conjunto de lugares, para colorear el mapa. Lugares sin datos no aparecen.
-func (r *PlaceRepository) GetAggRowsByPlaceIDs(ctx context.Context, placeIDs []int64) ([]models.CriterionAggRow, error) {
+func (r *pgPlaceRepository) GetAggRowsByPlaceIDs(ctx context.Context, placeIDs []int64) ([]models.CriterionAggRow, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT
 		     pcc.place_id,`+aggSelect+`,

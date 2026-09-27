@@ -8,10 +8,10 @@ import (
 )
 
 type CatalogHandler struct {
-	service *services.CatalogService
+	service services.CatalogService
 }
 
-func NewCatalogHandler(service *services.CatalogService) *CatalogHandler {
+func NewCatalogHandler(service services.CatalogService) *CatalogHandler {
 	return &CatalogHandler{service: service}
 }
 

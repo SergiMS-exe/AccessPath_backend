@@ -6,15 +6,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type GmapsLogRepository struct {
+type GmapsLogRepository interface {
+	CountThisMonth(ctx context.Context) (int, error)
+	Log(ctx context.Context) error
+}
+
+type pgGmapsLogRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewGmapsLogRepository(db *pgxpool.Pool) *GmapsLogRepository {
-	return &GmapsLogRepository{db: db}
+func NewGmapsLogRepository(db *pgxpool.Pool) GmapsLogRepository {
+	return &pgGmapsLogRepository{db: db}
 }
 
-func (r *GmapsLogRepository) CountThisMonth(ctx context.Context) (int, error) {
+var _ GmapsLogRepository = (*pgGmapsLogRepository)(nil)
+
+func (r *pgGmapsLogRepository) CountThisMonth(ctx context.Context) (int, error) {
 	var count int
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM gmaps_api_log
@@ -23,7 +30,7 @@ func (r *GmapsLogRepository) CountThisMonth(ctx context.Context) (int, error) {
 	return count, err
 }
 
-func (r *GmapsLogRepository) Log(ctx context.Context) error {
+func (r *pgGmapsLogRepository) Log(ctx context.Context) error {
 	_, err := r.db.Exec(ctx, `INSERT INTO gmaps_api_log DEFAULT VALUES`)
 	return err
 }

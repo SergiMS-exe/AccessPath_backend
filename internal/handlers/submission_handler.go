@@ -13,10 +13,10 @@ import (
 )
 
 type SubmissionHandler struct {
-	service *services.SubmissionService
+	service services.SubmissionService
 }
 
-func NewSubmissionHandler(service *services.SubmissionService) *SubmissionHandler {
+func NewSubmissionHandler(service services.SubmissionService) *SubmissionHandler {
 	return &SubmissionHandler{service: service}
 }
 

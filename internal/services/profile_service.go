@@ -15,17 +15,25 @@ type ErrInvalidNeedKey struct{ Key string }
 
 func (e ErrInvalidNeedKey) Error() string { return "invalid need_key: " + e.Key }
 
-type ProfileService struct {
-	db          *pgxpool.Pool
-	profileRepo *repositories.ProfileRepository
+type ProfileService interface {
+	Get(ctx context.Context, userID int64) (*models.ProfileResponse, error)
+	Set(ctx context.Context, userID int64, req models.ProfileRequest) (*models.ProfileResponse, error)
+	Delete(ctx context.Context, userID int64) error
 }
 
-func NewProfileService(db *pgxpool.Pool, profileRepo *repositories.ProfileRepository) *ProfileService {
-	return &ProfileService{db: db, profileRepo: profileRepo}
+type pgProfileService struct {
+	db          *pgxpool.Pool
+	profileRepo repositories.ProfileRepository
 }
+
+func NewProfileService(db *pgxpool.Pool, profileRepo repositories.ProfileRepository) ProfileService {
+	return &pgProfileService{db: db, profileRepo: profileRepo}
+}
+
+var _ ProfileService = (*pgProfileService)(nil)
 
 // Get devuelve las necesidades y el estado de consentimiento del usuario.
-func (s *ProfileService) Get(ctx context.Context, userID int64) (*models.ProfileResponse, error) {
+func (s *pgProfileService) Get(ctx context.Context, userID int64) (*models.ProfileResponse, error) {
 	needs, err := s.profileRepo.GetNeeds(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("profile: needs: %w", err)
@@ -46,7 +54,7 @@ func (s *ProfileService) Get(ctx context.Context, userID int64) (*models.Profile
 
 // Set fija las necesidades y marca el consentimiento explicito (opt-in). El
 // handler solo llega aqui si req.Consent == true.
-func (s *ProfileService) Set(ctx context.Context, userID int64, req models.ProfileRequest) (*models.ProfileResponse, error) {
+func (s *pgProfileService) Set(ctx context.Context, userID int64, req models.ProfileRequest) (*models.ProfileResponse, error) {
 	for _, need := range req.Needs {
 		if !models.ValidNeedKeys[need] {
 			return nil, ErrInvalidNeedKey{Key: need}
@@ -72,7 +80,7 @@ func (s *ProfileService) Set(ctx context.Context, userID int64, req models.Profi
 }
 
 // Delete borra el perfil y retira el consentimiento.
-func (s *ProfileService) Delete(ctx context.Context, userID int64) error {
+func (s *pgProfileService) Delete(ctx context.Context, userID int64) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("profile: begin tx: %w", err)

@@ -9,13 +9,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type ContributionRepository struct {
+type ContributionRepository interface {
+	UpsertLiveTx(ctx context.Context, tx pgx.Tx, submissionID, userID, placeID, criterionID, answerOptionID int64, existsFlag *bool, quality *int) (*models.Contribution, error)
+	FindByID(ctx context.Context, id int64) (*models.Contribution, error)
+	SoftDeleteTx(ctx context.Context, tx pgx.Tx, id int64) error
+	AnsweredByPlace(ctx context.Context, userID, placeID int64) ([]models.AnsweredContribution, error)
+	RecalculateCacheTx(ctx context.Context, tx pgx.Tx, placeID, criterionID int64) error
+}
+
+type pgContributionRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewContributionRepository(db *pgxpool.Pool) *ContributionRepository {
-	return &ContributionRepository{db: db}
+func NewContributionRepository(db *pgxpool.Pool) ContributionRepository {
+	return &pgContributionRepository{db: db}
 }
+
+var _ ContributionRepository = (*pgContributionRepository)(nil)
 
 const contributionColumns = `id, code, submission_id, user_id, place_id, criterion_id, answer_option_id, exists_flag, quality, created_at, updated_at, deleted_at`
 
@@ -23,7 +33,7 @@ const contributionColumns = `id, code, submission_id, user_id, place_id, criteri
 // un criterio, respetando el indice unico parcial (submission_id, criterion_id).
 // Editar = UPDATE in-place: refresca updated_at (fecha de validez), created_at
 // permanece estable. exists/quality vienen copiados de la opcion en el servicio.
-func (r *ContributionRepository) UpsertLiveTx(ctx context.Context, tx pgx.Tx, submissionID, userID, placeID, criterionID, answerOptionID int64, existsFlag *bool, quality *int) (*models.Contribution, error) {
+func (r *pgContributionRepository) UpsertLiveTx(ctx context.Context, tx pgx.Tx, submissionID, userID, placeID, criterionID, answerOptionID int64, existsFlag *bool, quality *int) (*models.Contribution, error) {
 	rows, err := tx.Query(ctx,
 		`INSERT INTO contribution (submission_id, user_id, place_id, criterion_id, answer_option_id, exists_flag, quality)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -45,7 +55,7 @@ func (r *ContributionRepository) UpsertLiveTx(ctx context.Context, tx pgx.Tx, su
 }
 
 // FindByID lee una contribucion viva (para validar propiedad al borrar).
-func (r *ContributionRepository) FindByID(ctx context.Context, id int64) (*models.Contribution, error) {
+func (r *pgContributionRepository) FindByID(ctx context.Context, id int64) (*models.Contribution, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+contributionColumns+` FROM contribution WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
@@ -59,14 +69,14 @@ func (r *ContributionRepository) FindByID(ctx context.Context, id int64) (*model
 }
 
 // SoftDeleteTx marca la contribucion como borrada (Deshacer).
-func (r *ContributionRepository) SoftDeleteTx(ctx context.Context, tx pgx.Tx, id int64) error {
+func (r *pgContributionRepository) SoftDeleteTx(ctx context.Context, tx pgx.Tx, id int64) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE contribution SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, id)
 	return err
 }
 
 // AnsweredByPlace devuelve las respuestas vivas del usuario en un lugar.
-func (r *ContributionRepository) AnsweredByPlace(ctx context.Context, userID, placeID int64) ([]models.AnsweredContribution, error) {
+func (r *pgContributionRepository) AnsweredByPlace(ctx context.Context, userID, placeID int64) ([]models.AnsweredContribution, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT criterion_id, exists_flag
 		 FROM contribution
@@ -81,7 +91,7 @@ func (r *ContributionRepository) AnsweredByPlace(ctx context.Context, userID, pl
 // conteos por exists, mediana de quality (percentile_cont) y n_photos. Se ejecuta
 // en la misma TX que la contribucion o su borrado. Si no quedan contribuciones
 // vivas, deja la fila a cero (definidos=0 => gris al derivar).
-func (r *ContributionRepository) RecalculateCacheTx(ctx context.Context, tx pgx.Tx, placeID, criterionID int64) error {
+func (r *pgContributionRepository) RecalculateCacheTx(ctx context.Context, tx pgx.Tx, placeID, criterionID int64) error {
 	_, err := tx.Exec(ctx,
 		`INSERT INTO place_criterion_cache
 		     (place_id, criterion_id, n_yes, n_no, n_unsure, quality_p50, n_photos, last_contribution_at, updated_at)

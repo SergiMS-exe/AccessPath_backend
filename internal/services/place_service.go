@@ -23,24 +23,44 @@ var (
 	ErrPlaceClosedPermanently = errors.New("place is permanently closed")
 )
 
-type PlaceService struct {
-	repo          *repositories.PlaceRepository
-	accSvc        *AccessibilityService
-	submissionSvc *SubmissionService
-	gmaps         *gmaps.Client
-	gmapsLog      *repositories.GmapsLogRepository
+// GmapsClient define las operaciones del cliente de Google Maps que el
+// servicio de lugares necesita. La implementacion real vive en pkg/gmaps; el
+// interface permite mockearla en tests.
+type GmapsClient interface {
+	Autocomplete(ctx context.Context, query, sessionToken string) ([]gmaps.AutocompleteItem, error)
+	Details(ctx context.Context, placeID, sessionToken string) (*gmaps.PlaceDetails, error)
+}
+
+type PlaceService interface {
+	GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error)
+	GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error)
+	GetNearby(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error)
+	GetByID(ctx context.Context, id int64) (*models.PlaceDetail, error)
+	Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
+	Update(ctx context.Context, id, userID int64, req models.UpdatePlaceRequest) (*models.Place, error)
+	Delete(ctx context.Context, id, userID int64) error
+	Search(ctx context.Context, query, sessionToken string) ([]models.GoogleAutocompleteItem, error)
+	ImportFromGoogle(ctx context.Context, googlePlaceID, sessionToken string, userID int64) (*models.Place, error)
+}
+
+type pgPlaceService struct {
+	repo          repositories.PlaceRepository
+	accSvc        AccessibilityService
+	submissionSvc SubmissionService
+	gmaps         GmapsClient
+	gmapsLog      repositories.GmapsLogRepository
 	monthlyLimit  int
 }
 
 func NewPlaceService(
-	repo *repositories.PlaceRepository,
-	accSvc *AccessibilityService,
-	submissionSvc *SubmissionService,
-	gmapsClient *gmaps.Client,
-	gmapsLog *repositories.GmapsLogRepository,
+	repo repositories.PlaceRepository,
+	accSvc AccessibilityService,
+	submissionSvc SubmissionService,
+	gmapsClient GmapsClient,
+	gmapsLog repositories.GmapsLogRepository,
 	monthlyLimit int,
-) *PlaceService {
-	return &PlaceService{
+) PlaceService {
+	return &pgPlaceService{
 		repo:          repo,
 		accSvc:        accSvc,
 		submissionSvc: submissionSvc,
@@ -50,7 +70,9 @@ func NewPlaceService(
 	}
 }
 
-func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error) {
+var _ PlaceService = (*pgPlaceService)(nil)
+
+func (s *pgPlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error) {
 	places, total, err := s.repo.FindAll(ctx, filters)
 	if err != nil {
 		return nil, apperr.Wrap("places.list", err)
@@ -65,7 +87,7 @@ func (s *PlaceService) GetAll(ctx context.Context, filters models.PlaceFilters) 
 
 // GetByBounds devuelve los lugares del mapa enriquecidos con el estado por
 // dimension y el estado global (color del marcador).
-func (s *PlaceService) GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error) {
+func (s *pgPlaceService) GetByBounds(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error) {
 	places, err := s.repo.FindByBounds(ctx, filters)
 	if err != nil {
 		return nil, apperr.Wrap("places.map", err)
@@ -103,7 +125,7 @@ func (s *PlaceService) GetByBounds(ctx context.Context, filters models.BoundsFil
 	return items, nil
 }
 
-func (s *PlaceService) GetNearby(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error) {
+func (s *pgPlaceService) GetNearby(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error) {
 	places, err := s.repo.FindNearby(ctx, filters)
 	if err != nil {
 		return nil, apperr.Wrap("places.nearby", err)
@@ -112,7 +134,7 @@ func (s *PlaceService) GetNearby(ctx context.Context, filters models.NearbyFilte
 }
 
 // GetByID devuelve el detalle: place + desglose de accesibilidad + submissions.
-func (s *PlaceService) GetByID(ctx context.Context, id int64) (*models.PlaceDetail, error) {
+func (s *pgPlaceService) GetByID(ctx context.Context, id int64) (*models.PlaceDetail, error) {
 	place, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -138,7 +160,7 @@ func (s *PlaceService) GetByID(ctx context.Context, id int64) (*models.PlaceDeta
 	}, nil
 }
 
-func (s *PlaceService) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
+func (s *pgPlaceService) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
 	place, err := s.repo.Create(ctx, req)
 	if err != nil {
 		return nil, apperr.Wrap("places.create", err)
@@ -146,7 +168,17 @@ func (s *PlaceService) Create(ctx context.Context, req models.CreatePlaceRequest
 	return place, nil
 }
 
-func (s *PlaceService) Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error) {
+func (s *pgPlaceService) Update(ctx context.Context, id, userID int64, req models.UpdatePlaceRequest) (*models.Place, error) {
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperr.NotFound("places.update", "Place")
+		}
+		return nil, apperr.Wrap("places.update", err)
+	}
+	if existing.CreatedBy != userID {
+		return nil, ErrNotOwner
+	}
 	place, err := s.repo.Update(ctx, id, req)
 	if err != nil {
 		return nil, apperr.Wrap("places.update", err)
@@ -154,21 +186,31 @@ func (s *PlaceService) Update(ctx context.Context, id int64, req models.UpdatePl
 	return place, nil
 }
 
-func (s *PlaceService) Delete(ctx context.Context, id int64) error {
+func (s *pgPlaceService) Delete(ctx context.Context, id, userID int64) error {
+	existing, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.NotFound("places.delete", "Place")
+		}
+		return apperr.Wrap("places.delete", err)
+	}
+	if existing.CreatedBy != userID {
+		return ErrNotOwner
+	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return apperr.Wrap("places.delete", err)
 	}
 	return nil
 }
 
-func (s *PlaceService) Search(ctx context.Context, query, sessionToken string) ([]models.GoogleAutocompleteItem, error) {
+func (s *pgPlaceService) Search(ctx context.Context, query, sessionToken string) ([]models.GoogleAutocompleteItem, error) {
 	if s.gmaps == nil {
 		return nil, apperr.GmapsNotConfigured("places.search")
 	}
 	items, err := s.gmaps.Autocomplete(ctx, query, sessionToken)
 	if err != nil {
-		// gmaps ya devuelve *AppError tipado; Wrap lo preserva sin perder code/http_status.
-		return nil, apperr.Wrap("places.search", err)
+		// gmaps ya devuelve *AppError tipado; lo pasamos tal cual.
+		return nil, err
 	}
 	result := make([]models.GoogleAutocompleteItem, 0, len(items))
 	for _, it := range items {
@@ -182,7 +224,7 @@ func (s *PlaceService) Search(ctx context.Context, query, sessionToken string) (
 	return result, nil
 }
 
-func (s *PlaceService) ImportFromGoogle(ctx context.Context, googlePlaceID, sessionToken string, userID int64) (*models.Place, error) {
+func (s *pgPlaceService) ImportFromGoogle(ctx context.Context, googlePlaceID, sessionToken string, userID int64) (*models.Place, error) {
 	if s.gmaps == nil {
 		return nil, apperr.GmapsNotConfigured("places.import")
 	}
@@ -192,7 +234,7 @@ func (s *PlaceService) ImportFromGoogle(ctx context.Context, googlePlaceID, sess
 		return existing, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, apperr.Wrap("places.import", err)
+		return nil, err //nolint:wrapcheck
 	}
 
 	if s.monthlyLimit > 0 {
@@ -207,7 +249,7 @@ func (s *PlaceService) ImportFromGoogle(ctx context.Context, googlePlaceID, sess
 
 	details, err := s.gmaps.Details(ctx, googlePlaceID, sessionToken)
 	if err != nil {
-		return nil, apperr.Wrap("places.import", err)
+		return nil, err
 	}
 
 	// No importar sitios cerrados permanentemente. La llamada a Details ya

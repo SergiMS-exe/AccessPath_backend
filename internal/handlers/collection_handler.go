@@ -12,10 +12,10 @@ import (
 )
 
 type CollectionHandler struct {
-	service *services.CollectionService
+	service services.CollectionService
 }
 
-func NewCollectionHandler(service *services.CollectionService) *CollectionHandler {
+func NewCollectionHandler(service services.CollectionService) *CollectionHandler {
 	return &CollectionHandler{service: service}
 }
 

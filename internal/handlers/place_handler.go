@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -9,15 +10,16 @@ import (
 	"accesspath/internal/services"
 	"accesspath/pkg/apperr"
 	"accesspath/pkg/response"
+	"accesspath/pkg/validate"
 
 	"github.com/gin-gonic/gin"
 )
 
 type PlaceHandler struct {
-	service *services.PlaceService
+	service services.PlaceService
 }
 
-func NewPlaceHandler(service *services.PlaceService) *PlaceHandler {
+func NewPlaceHandler(service services.PlaceService) *PlaceHandler {
 	return &PlaceHandler{service: service}
 }
 
@@ -57,10 +59,39 @@ func (h *PlaceHandler) GetByBounds(c *gin.Context) {
 		return
 	}
 
-	minLat := parseFloatOrDefault(c.Query("min_lat"), 0)
-	maxLat := parseFloatOrDefault(c.Query("max_lat"), 0)
-	minLng := parseFloatOrDefault(c.Query("min_lng"), 0)
-	maxLng := parseFloatOrDefault(c.Query("max_lng"), 0)
+	minLat, errLat := parseStrictFloat(c, "min_lat")
+	if errLat != nil {
+		return
+	}
+	maxLat, errLat := parseStrictFloat(c, "max_lat")
+	if errLat != nil {
+		return
+	}
+	minLng, errLng := parseStrictFloat(c, "min_lng")
+	if errLng != nil {
+		return
+	}
+	maxLng, errLng := parseStrictFloat(c, "max_lng")
+	if errLng != nil {
+		return
+	}
+
+	if err := validate.Lat(minLat); err != nil {
+		Respond(c, apperr.Validation("places.map", "min_lat", err.Error()))
+		return
+	}
+	if err := validate.Lat(maxLat); err != nil {
+		Respond(c, apperr.Validation("places.map", "max_lat", err.Error()))
+		return
+	}
+	if err := validate.Lng(minLng); err != nil {
+		Respond(c, apperr.Validation("places.map", "min_lng", err.Error()))
+		return
+	}
+	if err := validate.Lng(maxLng); err != nil {
+		Respond(c, apperr.Validation("places.map", "max_lng", err.Error()))
+		return
+	}
 
 	if minLat >= maxLat || minLng >= maxLng {
 		Respond(c, apperr.BadRequest("places.map", "places.invalid_bounds",
@@ -84,9 +115,26 @@ func (h *PlaceHandler) GetByBounds(c *gin.Context) {
 }
 
 func (h *PlaceHandler) GetNearby(c *gin.Context) {
+	lat, errLat := parseStrictFloat(c, "lat")
+	if errLat != nil {
+		return
+	}
+	lng, errLng := parseStrictFloat(c, "lng")
+	if errLng != nil {
+		return
+	}
+	if err := validate.Lat(lat); err != nil {
+		Respond(c, apperr.Validation("places.nearby", "lat", err.Error()))
+		return
+	}
+	if err := validate.Lng(lng); err != nil {
+		Respond(c, apperr.Validation("places.nearby", "lng", err.Error()))
+		return
+	}
+
 	filters := models.NearbyFilter{
-		Lat:    parseFloatOrDefault(c.Query("lat"), 0),
-		Lng:    parseFloatOrDefault(c.Query("lng"), 0),
+		Lat:    lat,
+		Lng:    lng,
 		Radius: parseFloatOrDefault(c.Query("radius"), 5),
 		Limit:  parseIntOrDefault(c.Query("limit"), 20),
 		Offset: parseIntOrDefault(c.Query("offset"), 0),
@@ -181,13 +229,43 @@ func (h *PlaceHandler) Update(c *gin.Context) {
 		return
 	}
 
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		Respond(c, apperr.Unauthorized("places.update", "token requerido"))
+		return
+	}
+
 	var req models.UpdatePlaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Respond(c, apperr.BadRequest("places.update", "places.invalid_body", err.Error()))
 		return
 	}
+	if err := validate.Lat(req.Latitude); err != nil {
+		Respond(c, apperr.Validation("places.update", "latitude", err.Error()))
+		return
+	}
+	if err := validate.Lng(req.Longitude); err != nil {
+		Respond(c, apperr.Validation("places.update", "longitude", err.Error()))
+		return
+	}
+	if err := validate.MaxLen(req.Name, "name", 255); err != nil {
+		Respond(c, apperr.Validation("places.update", "name", err.Error()))
+		return
+	}
+	if req.Address != nil {
+		if err := validate.MaxLen(*req.Address, "address", 500); err != nil {
+			Respond(c, apperr.Validation("places.update", "address", err.Error()))
+			return
+		}
+	}
+	if req.Description != nil {
+		if err := validate.MaxLen(*req.Description, "description", 2000); err != nil {
+			Respond(c, apperr.Validation("places.update", "description", err.Error()))
+			return
+		}
+	}
 
-	place, err := h.service.Update(c.Request.Context(), id, req)
+	place, err := h.service.Update(c.Request.Context(), id, userID, req)
 	if Respond(c, err) {
 		return
 	}
@@ -203,7 +281,13 @@ func (h *PlaceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), id); Respond(c, err) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		Respond(c, apperr.Unauthorized("places.delete", "token requerido"))
+		return
+	}
+
+	if err := h.service.Delete(c.Request.Context(), id, userID); Respond(c, err) {
 		return
 	}
 
@@ -222,4 +306,24 @@ func parseFloatOrDefault(s string, def float64) float64 {
 		return v
 	}
 	return def
+}
+
+// parseStrictFloat parsea un query param como float64 obligatorio. Si el
+// param falta o no es un numero valido, escribe un BadRequest en el contexto
+// via Respond y devuelve error para que el handler haga return. Asi no se
+// enmascaran inputs malformados con 0 como hacia parseFloatOrDefault.
+func parseStrictFloat(c *gin.Context, field string) (float64, error) {
+	raw := c.Query(field)
+	if raw == "" {
+		Respond(c, apperr.BadRequest(opFromRequest(c),
+			"validation.missing", field+" es obligatorio"))
+		return 0, errors.New("missing")
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		Respond(c, apperr.Validation(opFromRequest(c), field,
+			"debe ser un numero; recibido: "+raw))
+		return 0, err
+	}
+	return v, nil
 }

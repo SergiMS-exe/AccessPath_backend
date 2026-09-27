@@ -9,20 +9,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type SubmissionRepository struct {
+type SubmissionRepository interface {
+	GetOrCreateLiveTx(ctx context.Context, tx pgx.Tx, userID, placeID int64) (*models.Submission, error)
+	SetCommentTx(ctx context.Context, tx pgx.Tx, submissionID int64, comment *string) error
+	FindByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error)
+}
+
+type pgSubmissionRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewSubmissionRepository(db *pgxpool.Pool) *SubmissionRepository {
-	return &SubmissionRepository{db: db}
+func NewSubmissionRepository(db *pgxpool.Pool) SubmissionRepository {
+	return &pgSubmissionRepository{db: db}
 }
+
+var _ SubmissionRepository = (*pgSubmissionRepository)(nil)
 
 const submissionColumns = `id, code, user_id, place_id, comment, created_at, updated_at, deleted_at`
 
 // GetOrCreateLiveTx devuelve la valoracion viva del usuario para el lugar,
 // creandola si no existe. Idempotente por el indice unico parcial
 // (user_id, place_id) WHERE deleted_at IS NULL. Refresca updated_at.
-func (r *SubmissionRepository) GetOrCreateLiveTx(ctx context.Context, tx pgx.Tx, userID, placeID int64) (*models.Submission, error) {
+func (r *pgSubmissionRepository) GetOrCreateLiveTx(ctx context.Context, tx pgx.Tx, userID, placeID int64) (*models.Submission, error) {
 	rows, err := tx.Query(ctx,
 		`INSERT INTO submission (user_id, place_id)
 		 VALUES ($1, $2)
@@ -41,7 +49,7 @@ func (r *SubmissionRepository) GetOrCreateLiveTx(ctx context.Context, tx pgx.Tx,
 }
 
 // SetCommentTx fija el comentario de la submission y refresca updated_at.
-func (r *SubmissionRepository) SetCommentTx(ctx context.Context, tx pgx.Tx, submissionID int64, comment *string) error {
+func (r *pgSubmissionRepository) SetCommentTx(ctx context.Context, tx pgx.Tx, submissionID int64, comment *string) error {
 	_, err := tx.Exec(ctx,
 		`UPDATE submission SET comment = $1, updated_at = NOW() WHERE id = $2`,
 		comment, submissionID)
@@ -51,7 +59,7 @@ func (r *SubmissionRepository) SetCommentTx(ctx context.Context, tx pgx.Tx, subm
 // FindByPlace devuelve las valoraciones vivas de un lugar que aportan algo que
 // contar (comentario no vacio o al menos una foto), con su autor. Las fotos se
 // adjuntan por separado via PhotoRepository.
-func (r *SubmissionRepository) FindByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error) {
+func (r *pgSubmissionRepository) FindByPlace(ctx context.Context, placeID int64) ([]models.SubmissionWithDetails, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT s.id, s.code, s.user_id, s.place_id, s.comment, s.created_at, s.updated_at, s.deleted_at,
 		        u.username

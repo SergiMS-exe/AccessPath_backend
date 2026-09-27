@@ -13,11 +13,11 @@ import (
 )
 
 type ContributionHandler struct {
-	service     *services.ContributionService
-	questionSvc *services.QuestionService
+	service     services.ContributionService
+	questionSvc services.QuestionService
 }
 
-func NewContributionHandler(service *services.ContributionService, questionSvc *services.QuestionService) *ContributionHandler {
+func NewContributionHandler(service services.ContributionService, questionSvc services.QuestionService) *ContributionHandler {
 	return &ContributionHandler{service: service, questionSvc: questionSvc}
 }
 

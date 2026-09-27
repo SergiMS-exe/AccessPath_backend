@@ -17,24 +17,29 @@ var (
 	ErrOptionMismatch       = errors.New("answer option does not belong to criterion")
 )
 
-type ContributionService struct {
+type ContributionService interface {
+	Create(ctx context.Context, userID int64, req models.ContributionRequest) (*models.ContributionResult, error)
+	Delete(ctx context.Context, userID, id int64) (*models.ContributionResult, error)
+}
+
+type pgContributionService struct {
 	db             *pgxpool.Pool
-	contribRepo    *repositories.ContributionRepository
-	submissionRepo *repositories.SubmissionRepository
-	catalogRepo    *repositories.CatalogRepository
-	placeRepo      *repositories.PlaceRepository
-	accSvc         *AccessibilityService
+	contribRepo    repositories.ContributionRepository
+	submissionRepo repositories.SubmissionRepository
+	catalogRepo    repositories.CatalogRepository
+	placeRepo      repositories.PlaceRepository
+	accSvc         AccessibilityService
 }
 
 func NewContributionService(
 	db *pgxpool.Pool,
-	contribRepo *repositories.ContributionRepository,
-	submissionRepo *repositories.SubmissionRepository,
-	catalogRepo *repositories.CatalogRepository,
-	placeRepo *repositories.PlaceRepository,
-	accSvc *AccessibilityService,
-) *ContributionService {
-	return &ContributionService{
+	contribRepo repositories.ContributionRepository,
+	submissionRepo repositories.SubmissionRepository,
+	catalogRepo repositories.CatalogRepository,
+	placeRepo repositories.PlaceRepository,
+	accSvc AccessibilityService,
+) ContributionService {
+	return &pgContributionService{
 		db:             db,
 		contribRepo:    contribRepo,
 		submissionRepo: submissionRepo,
@@ -44,10 +49,12 @@ func NewContributionService(
 	}
 }
 
+var _ ContributionService = (*pgContributionService)(nil)
+
 // Create resuelve exists/quality desde la opcion, hace upsert de la contribucion
 // viva, publica el lugar si es la primera y recalcula el cache del (place,criterion),
 // todo en una sola transaccion. Devuelve el semaforo en vivo.
-func (s *ContributionService) Create(ctx context.Context, userID int64, req models.ContributionRequest) (*models.ContributionResult, error) {
+func (s *pgContributionService) Create(ctx context.Context, userID int64, req models.ContributionRequest) (*models.ContributionResult, error) {
 	opt, err := s.catalogRepo.GetOptionByID(ctx, req.AnswerOptionID)
 	if err != nil {
 		return nil, fmt.Errorf("contribution: option: %w", err)
@@ -95,7 +102,7 @@ func (s *ContributionService) Create(ctx context.Context, userID int64, req mode
 }
 
 // Delete valida propiedad, hace soft delete (Deshacer) y recalcula el cache.
-func (s *ContributionService) Delete(ctx context.Context, userID, id int64) (*models.ContributionResult, error) {
+func (s *pgContributionService) Delete(ctx context.Context, userID, id int64) (*models.ContributionResult, error) {
 	contribution, err := s.contribRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, ErrContributionNotFound
@@ -124,7 +131,7 @@ func (s *ContributionService) Delete(ctx context.Context, userID, id int64) (*mo
 }
 
 // liveResult construye el estado nuevo del criterio y su dimension tras el cambio.
-func (s *ContributionService) liveResult(ctx context.Context, placeID, criterionID int64) (*models.ContributionResult, error) {
+func (s *pgContributionService) liveResult(ctx context.Context, placeID, criterionID int64) (*models.ContributionResult, error) {
 	rows, err := s.placeRepo.GetAccessibilityRows(ctx, placeID)
 	if err != nil {
 		return nil, fmt.Errorf("contribution: accessibility rows: %w", err)

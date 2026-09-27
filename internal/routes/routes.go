@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"accesspath/internal/config"
 	"accesspath/internal/handlers"
 	"accesspath/internal/middleware"
@@ -32,6 +34,7 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())
 	r.Use(middleware.CORS())
+	r.Use(middleware.SecurityHeaders(cfg))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
@@ -41,14 +44,21 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 
 	auth := middleware.Auth(cfg.JWTSecret)
 
+	// Limites de rate limit. Si Redis es nil (cache == nil) el middleware hace
+	// fail-open y deja pasar. OWASP API4 + API6.
+	rlLogin := middleware.RateLimit(cache, middleware.KeyByIP, 5, time.Minute)
+	rlRegister := middleware.RateLimit(cache, middleware.KeyByIP, 3, time.Hour)
+	rlRefresh := middleware.RateLimit(cache, middleware.KeyByIP, 30, time.Minute)
+	rlSearch := middleware.RateLimit(cache, middleware.KeyByIP, 10, time.Second)
+
 	v1 := r.Group("/api/v1")
 	{
-		// Auth - publica
+		// Auth - publica, con rate limit por IP.
 		authGroup := v1.Group("/auth")
 		{
-			authGroup.POST("/register", h.User.Register)
-			authGroup.POST("/login", h.User.Login)
-			authGroup.POST("/refresh", h.User.Refresh)
+			authGroup.POST("/register", rlRegister, h.User.Register)
+			authGroup.POST("/login", rlLogin, h.User.Login)
+			authGroup.POST("/refresh", rlRefresh, h.User.Refresh)
 		}
 
 		// Users
@@ -67,7 +77,7 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 			places.GET("", middleware.Cache(cache, "places"), h.Place.GetAll)
 			places.GET("/map", h.Place.GetByBounds)
 			places.GET("/nearby", middleware.Cache(cache, "nearby"), h.Place.GetNearby)
-			places.GET("/search", h.Place.Search)
+			places.GET("/search", rlSearch, h.Place.Search)
 			places.GET("/:id", h.Place.GetByID)
 			places.POST("", auth, h.Place.Create)
 			places.POST("/from-google", auth, h.Place.ImportFromGoogle)
