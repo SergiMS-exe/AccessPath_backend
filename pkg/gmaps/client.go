@@ -23,14 +23,24 @@ const (
 
 var ErrNoAPIKey = errors.New("google maps api key not configured")
 
-type Client struct {
+// Client es el interface que el resto de la app consume. La implementacion
+// concreta (httpClient) es privada; los servicios reciben el interface, lo
+// que permite mockearlo en tests.
+type Client interface {
+	Autocomplete(ctx context.Context, query, sessionToken string) ([]AutocompleteItem, error)
+	Details(ctx context.Context, placeID, sessionToken string) (*PlaceDetails, error)
+}
+
+type httpClient struct {
 	apiKey string
 	http   *http.Client
 }
 
-func New(apiKey string) *Client {
-	return &Client{apiKey: apiKey, http: &http.Client{}}
+func New(apiKey string) Client {
+	return &httpClient{apiKey: apiKey, http: &http.Client{}}
 }
+
+var _ Client = (*httpClient)(nil)
 
 type AutocompleteItem struct {
 	PlaceID       string `json:"place_id"`
@@ -71,7 +81,7 @@ var gmapsStatusHandlers = map[string]gmapsStatusHandler{
 	},
 }
 
-func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) ([]AutocompleteItem, error) {
+func (c *httpClient) Autocomplete(ctx context.Context, query, sessionToken string) ([]AutocompleteItem, error) {
 	if c.apiKey == "" {
 		return nil, apperr.GmapsNotConfigured("gmaps.Autocomplete")
 	}
@@ -131,7 +141,7 @@ func (c *Client) Autocomplete(ctx context.Context, query, sessionToken string) (
 	return items, nil
 }
 
-func (c *Client) Details(ctx context.Context, placeID, sessionToken string) (*PlaceDetails, error) {
+func (c *httpClient) Details(ctx context.Context, placeID, sessionToken string) (*PlaceDetails, error) {
 	if c.apiKey == "" {
 		return nil, apperr.GmapsNotConfigured("gmaps.Details")
 	}

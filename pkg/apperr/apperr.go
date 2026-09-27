@@ -105,6 +105,13 @@ func Unauthorized(op, user string) *AppError {
 	return New(op, "unauthorized", http.StatusUnauthorized, user, nil)
 }
 
+// TooManyRequests error 429. Usado por el middleware de rate limit cuando se
+// supera el cupo por ventana (OWASP API4).
+func TooManyRequests(op string) *AppError {
+	return New(op, "rate_limited", http.StatusTooManyRequests,
+		"Demasiadas solicitudes. Vuelve a intentarlo en unos minutos.", nil)
+}
+
 // --- Dominio gmaps ---
 
 // GmapsNotConfigured: API key vacia en el backend. Es un error de

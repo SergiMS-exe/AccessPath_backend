@@ -31,7 +31,11 @@ var defaultMessagesByStatus = map[int]string{
 	http.StatusServiceUnavailable: "Servicio no disponible. Vuelve a intentarlo.",
 }
 
-func defaultMessageForStatus(status int) string {
+// DefaultMessageForStatus devuelve el mensaje generico user-friendly asociado
+// a un codigo HTTP. Los 5xx sin entrada explicita caen a "error interno".
+// Exportada para permitir tests dedicados en tests/ sin perder la API
+// semantica del paquete.
+func DefaultMessageForStatus(status int) string {
 	if msg, ok := defaultMessagesByStatus[status]; ok {
 		return msg
 	}
@@ -41,10 +45,10 @@ func defaultMessageForStatus(status int) string {
 	return "Error desconocido."
 }
 
-// levelForStatus mapea codigos HTTP a niveles de slog siguiendo la convencion
+// LevelForStatus mapea codigos HTTP a niveles de slog siguiendo la convencion
 // estandar: 5xx es error operacional, 4xx es peticion del cliente que no se
-// deberia repetir igual.
-func levelForStatus(status int) slog.Level {
+// deberia repetir igual. Exportada por la misma razon que DefaultMessageForStatus.
+func LevelForStatus(status int) slog.Level {
 	if status >= 500 {
 		return slog.LevelError
 	}
@@ -77,12 +81,12 @@ func RespondInternal(c *gin.Context, ae *AppError) {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 
-	slog.LogAttrs(c.Request.Context(), levelForStatus(ae.HTTPStatus), "app_error",
+	slog.LogAttrs(c.Request.Context(), LevelForStatus(ae.HTTPStatus), "app_error",
 		attrsToSlogAttrs(attrs)...)
 
 	userMsg := ae.UserMessage
 	if userMsg == "" {
-		userMsg = defaultMessageForStatus(ae.HTTPStatus)
+		userMsg = DefaultMessageForStatus(ae.HTTPStatus)
 	}
 
 	c.AbortWithStatusJSON(ae.HTTPStatus, response.Envelope{Error: userMsg})
@@ -103,19 +107,19 @@ func Respond(c *gin.Context, err error) bool {
 
 	var ae *AppError
 	if !errors.As(err, &ae) {
-		ae = Internal(opFromContext(c), err)
+		ae = Internal(OpFromContext(c), err)
 	}
 	if ae.Op == "" {
-		ae.Op = opFromContext(c)
+		ae.Op = OpFromContext(c)
 	}
 
 	RespondInternal(c, ae)
 	return true
 }
 
-// opFromContext deduce un op estable del path cuando el error no trae uno.
-// Sirve para que los logs agrupen por endpoint.
-func opFromContext(c *gin.Context) string {
+// OpFromContext deduce un op estable del path cuando el error no trae uno.
+// Sirve para que los logs agrupen por endpoint. Exportada para tests.
+func OpFromContext(c *gin.Context) string {
 	if p := strings.Trim(c.FullPath(), "/"); p != "" {
 		return "http." + p
 	}
