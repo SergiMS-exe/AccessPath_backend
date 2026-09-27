@@ -1,0 +1,30 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - staticcheck
+    - gosec
+    - gofmt
+    - goimports
+    - revive
+    - gocritic
+    - misspell
+
+linters-settings:
+  gosec:
+    # Solo bloquea medium+; G104 (errors not checked) tiene demasiados
+    # falsos positivos con defer rows.Close() en queries pgx.
+    severity: medium
+    excludes:
+      - G104
+  misspell:
+    locale: es
+  revive:
+    rules:
+      - name: var-naming
+      - name: package-comments
+      - name: exported
