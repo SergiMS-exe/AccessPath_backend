@@ -14,7 +14,6 @@ type Repositories struct {
 	Photo        PhotoRepository
 	Profile      ProfileRepository
 	Collection   CollectionRepository
-	GmapsLog     GmapsLogRepository
 }
 
 func New(db *pgxpool.Pool) *Repositories {
@@ -27,6 +26,5 @@ func New(db *pgxpool.Pool) *Repositories {
 		Photo:        NewPhotoRepository(db),
 		Profile:      NewProfileRepository(db),
 		Collection:   NewCollectionRepository(db),
-		GmapsLog:     NewGmapsLogRepository(db),
 	}
 }

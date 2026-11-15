@@ -11,6 +11,333 @@
     "host": "localhost:8080",
     "basePath": "/api/v1",
     "paths": {
+        "/contributions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Contribucion atomica; user_id del token. Devuelve el semaforo en vivo.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "contributions"
+                ],
+                "summary": "Crear contribucion",
+                "parameters": [
+                    {
+                        "description": "Contribucion",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ContributionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.ContributionResult"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/contributions/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft delete + recalculo. Solo el propietario.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "contributions"
+                ],
+                "summary": "Deshacer contribucion",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID de la contribucion",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.ContributionResult"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dimensions": {
+            "get": {
+                "description": "Dimensiones con sus criterios, opciones y depends_on. Reemplaza /categories.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Catalogo del formulario",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/models.DimensionDetail"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/me/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Necesidades funcionales + estado de consentimiento del usuario.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Perfil funcional",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.ProfileResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Set de necesidades + consentimiento explicito (opt-in). Requiere consent=true.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Fijar perfil funcional",
+                "parameters": [
+                    {
+                        "description": "Perfil",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.ProfileResponse"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Borra necesidades y retira el consentimiento.",
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Borrar perfil funcional",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/places/community": {
+            "post": {
+                "description": "Crea el sitio que el usuario no encontro en el catalogo. Nace con moderation_status=pending: no aparece en el mapa ni en el buscador hasta que se verifica. Si ya existe un lugar parecido a menos de 50 m devuelve el existente con 200.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Crea un lugar comunitario pendiente de moderacion",
+                "parameters": [
+                    {
+                        "description": "datos del sitio",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CreateCommunityPlaceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.Place"
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.Place"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/places/from-catalog": {
+            "post": {
+                "description": "Copia a la base local una ficha del catalogo (Overture Maps). Idempotente por (source, external_id). Si se envia place_id devuelve ese lugar local ya existente.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Importa un lugar del catalogo externo",
+                "parameters": [
+                    {
+                        "description": "source + external_id, o place_id",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ImportFromCatalogRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.Place"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/places/map": {
             "get": {
                 "description": "Retorna los lugares dentro de un bounding box definido por esquina superior-izquierda y esquina inferior-derecha",
@@ -52,12 +379,6 @@
                     },
                     {
                         "type": "integer",
-                        "description": "Filtrar por categoría",
-                        "name": "category_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
                         "default": 100,
                         "description": "Máximo de resultados",
                         "name": "limit",
@@ -72,7 +393,7 @@
                             "additionalProperties": {
                                 "type": "array",
                                 "items": {
-                                    "$ref": "#/definitions/models.Place"
+                                    "$ref": "#/definitions/models.PlaceMapItem"
                                 }
                             }
                         }
@@ -97,9 +418,715 @@
                     }
                 }
             }
+        },
+        "/places/resolve-link": {
+            "post": {
+                "description": "Extrae nombre, coordenadas y ftid de un enlace compartido por el usuario y busca el sitio en el catalogo. No descarga la ficha de Google ni usa su API.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Lee un enlace de Google Maps",
+                "parameters": [
+                    {
+                        "description": "url del enlace",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ResolveLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.ResolvedLink"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/places/search": {
+            "get": {
+                "description": "Busca en el catalogo local (Overture Maps) y en los lugares ya verificados.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "places"
+                ],
+                "summary": "Busca lugares por texto",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Texto a buscar (minimo 3 caracteres)",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Latitud del usuario (opcional, anade distancia)",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Longitud del usuario (opcional, anade distancia)",
+                        "name": "lng",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Maximo de resultados",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/models.PlaceSearchItem"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/places/{id}/next-question": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Devuelve el criterio de mayor valor para (place, user); vacio si nada util.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "contributions"
+                ],
+                "summary": "Siguiente pregunta",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID del lugar",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.NextQuestionResponse"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/places/{id}/submissions": {
+            "get": {
+                "description": "\"Que cuenta la gente\": submissions (comentario + fotos).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "submissions"
+                ],
+                "summary": "Comentarios y fotos de un lugar",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID del lugar",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/models.SubmissionWithDetails"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/submissions": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "get-or-create de la valoracion viva del usuario para el lugar; fija comentario y/o adjunta fotos. user_id del token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "submissions"
+                ],
+                "summary": "Guardar valoracion (comentario/fotos)",
+                "parameters": [
+                    {
+                        "description": "Submission",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SubmissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/models.Submission"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "models.AccessibilityState": {
+            "type": "string",
+            "enum": [
+                "green",
+                "yellow",
+                "red",
+                "no_data"
+            ],
+            "x-enum-varnames": [
+                "StateGreen",
+                "StateYellow",
+                "StateRed",
+                "StateNoData"
+            ]
+        },
+        "models.AnswerOption": {
+            "type": "object",
+            "properties": {
+                "criterion_id": {
+                    "type": "integer"
+                },
+                "exists_value": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_unsure": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "quality_value": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.CatalogItem": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operating_status": {
+                    "type": "string"
+                },
+                "phones": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "postcode": {
+                    "type": "string"
+                },
+                "refreshed_at": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "subcategory": {
+                    "type": "string"
+                },
+                "websites": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.Confidence": {
+            "type": "object",
+            "properties": {
+                "last_contribution_at": {
+                    "type": "string"
+                },
+                "level": {
+                    "description": "none | low | medium | high",
+                    "type": "string"
+                },
+                "n_defined": {
+                    "type": "integer"
+                },
+                "n_unsure": {
+                    "type": "integer"
+                },
+                "photo_ratio": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.ContributionRequest": {
+            "type": "object",
+            "required": [
+                "answer_option_id",
+                "criterion_id",
+                "place_id"
+            ],
+            "properties": {
+                "answer_option_id": {
+                    "type": "integer"
+                },
+                "criterion_id": {
+                    "type": "integer"
+                },
+                "place_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ContributionResult": {
+            "type": "object",
+            "properties": {
+                "contribution_id": {
+                    "type": "integer"
+                },
+                "criterion": {
+                    "$ref": "#/definitions/models.CriterionScore"
+                },
+                "dimension": {
+                    "$ref": "#/definitions/models.DimensionScore"
+                }
+            }
+        },
+        "models.CreateCommunityPlaceRequest": {
+            "type": "object",
+            "required": [
+                "latitude",
+                "longitude",
+                "name"
+            ],
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "google_ftid": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.Criterion": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "depends_on_criterion_id": {
+                    "type": "integer"
+                },
+                "dimension_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_blocking": {
+                    "type": "boolean"
+                },
+                "is_starter": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "profile_tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.CriterionDetail": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "depends_on_criterion_id": {
+                    "type": "integer"
+                },
+                "dimension_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_blocking": {
+                    "type": "boolean"
+                },
+                "is_starter": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AnswerOption"
+                    }
+                },
+                "profile_tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.CriterionScore": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "$ref": "#/definitions/models.Confidence"
+                },
+                "conflict": {
+                    "type": "boolean"
+                },
+                "criterion_id": {
+                    "type": "integer"
+                },
+                "is_blocking": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "n_no": {
+                    "type": "integer"
+                },
+                "n_unsure": {
+                    "type": "integer"
+                },
+                "n_yes": {
+                    "type": "integer"
+                },
+                "profile_tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "quality_p50": {
+                    "type": "number"
+                },
+                "state": {
+                    "$ref": "#/definitions/models.AccessibilityState"
+                }
+            }
+        },
+        "models.DimensionDetail": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "criteria": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.CriterionDetail"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.DimensionScore": {
+            "type": "object",
+            "properties": {
+                "conflict": {
+                    "type": "boolean"
+                },
+                "criteria": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.CriterionScore"
+                    }
+                },
+                "dimension_id": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "state": {
+                    "$ref": "#/definitions/models.AccessibilityState"
+                }
+            }
+        },
+        "models.ImportFromCatalogRequest": {
+            "type": "object",
+            "properties": {
+                "external_id": {
+                    "type": "string"
+                },
+                "place_id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.NextQuestionResponse": {
+            "type": "object",
+            "properties": {
+                "criterion": {
+                    "$ref": "#/definitions/models.Criterion"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AnswerOption"
+                    }
+                }
+            }
+        },
+        "models.Photo": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "contribution_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "object_key": {
+                    "type": "string"
+                },
+                "submission_id": {
+                    "type": "integer"
+                },
+                "suggested_slot": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PhotoInput": {
+            "type": "object",
+            "required": [
+                "data"
+            ],
+            "properties": {
+                "contribution_id": {
+                    "type": "integer"
+                },
+                "data": {
+                    "description": "base64",
+                    "type": "string"
+                },
+                "suggested_slot": {
+                    "type": "string"
+                }
+            }
+        },
         "models.Place": {
             "type": "object",
             "properties": {
@@ -121,8 +1148,129 @@
                 "description": {
                     "type": "string"
                 },
+                "external_id": {
+                    "description": "ExternalID es el id del sitio en el proveedor de origen (GERS id, place id).",
+                    "type": "string"
+                },
+                "google_ftid": {
+                    "description": "GoogleFTID es el feature id del enlace de Google; se guarda como\ntrazabilidad y para futuras comprobaciones, no para deduplicar.",
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "moderation_status": {
+                    "description": "ModerationStatus: verified | pending | rejected.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "published": {
+                    "description": "Published significa \"tiene datos de accesibilidad\" (NO es moderacion).",
+                    "type": "boolean"
+                },
+                "source": {
+                    "description": "Source indica el origen del dato: 'overture' o 'community'.",
+                    "type": "string"
+                },
+                "source_url": {
+                    "description": "SourceURL es el enlace que aporto el usuario, si lo hubo.",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PlaceMapItem": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.DimensionScore"
+                    }
+                },
+                "external_id": {
+                    "description": "ExternalID es el id del sitio en el proveedor de origen (GERS id, place id).",
+                    "type": "string"
+                },
+                "google_ftid": {
+                    "description": "GoogleFTID es el feature id del enlace de Google; se guarda como\ntrazabilidad y para futuras comprobaciones, no para deduplicar.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "moderation_status": {
+                    "description": "ModerationStatus: verified | pending | rejected.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "overall_state": {
+                    "$ref": "#/definitions/models.AccessibilityState"
+                },
+                "published": {
+                    "description": "Published significa \"tiene datos de accesibilidad\" (NO es moderacion).",
+                    "type": "boolean"
+                },
+                "source": {
+                    "description": "Source indica el origen del dato: 'overture' o 'community'.",
+                    "type": "string"
+                },
+                "source_url": {
+                    "description": "SourceURL es el enlace que aporto el usuario, si lo hubo.",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PlacePrefill": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "google_ftid": {
+                    "type": "string"
                 },
                 "latitude": {
                     "type": "number"
@@ -133,7 +1281,199 @@
                 "name": {
                     "type": "string"
                 },
+                "source_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PlaceSearchItem": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "distance_meters": {
+                    "type": "number"
+                },
+                "external_id": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "local_place_id": {
+                    "description": "LocalPlaceID se rellena si el sitio ya existe en nuestra tabla place.",
+                    "type": "integer"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "main_text": {
+                    "type": "string"
+                },
+                "place_id": {
+                    "type": "string"
+                },
+                "secondary_text": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ProfileRequest": {
+            "type": "object",
+            "required": [
+                "consent"
+            ],
+            "properties": {
+                "consent": {
+                    "type": "boolean"
+                },
+                "needs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.ProfileResponse": {
+            "type": "object",
+            "properties": {
+                "consent_at": {
+                    "type": "string"
+                },
+                "has_consent": {
+                    "type": "boolean"
+                },
+                "needs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "models.ResolveLinkRequest": {
+            "type": "object",
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ResolvedLink": {
+            "type": "object",
+            "properties": {
+                "catalog": {
+                    "$ref": "#/definitions/models.CatalogItem"
+                },
+                "matched": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "description": "Message explica por que no hubo match (util para la UI).",
+                    "type": "string"
+                },
+                "prefill": {
+                    "$ref": "#/definitions/models.PlacePrefill"
+                }
+            }
+        },
+        "models.Submission": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "place_id": {
+                    "type": "integer"
+                },
                 "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.SubmissionRequest": {
+            "type": "object",
+            "required": [
+                "place_id"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "photos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.PhotoInput"
+                    }
+                },
+                "place_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.SubmissionWithDetails": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deleted_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "photos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Photo"
+                    }
+                },
+                "place_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "username": {
                     "type": "string"
                 }
             }

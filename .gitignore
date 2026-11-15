@@ -27,3 +27,7 @@ Thumbs.db
 
 # Binario compilado localmente en la raiz (no el directorio cmd/server/)
 /server
+# Nix
+.direnv/
+result
+result-*

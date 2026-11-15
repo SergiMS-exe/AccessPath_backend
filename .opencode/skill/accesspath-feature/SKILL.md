@@ -15,7 +15,7 @@ HTTP request
   -> Handler    (parseo, validación, delegación)
   -> Service    (lógica de negocio, transacciones, sentinels de error)
   -> Repository (SQL parametrizado, sin lógica)
-  -> PostgreSQL / Redis / MinIO / Google Maps
+  -> PostgreSQL / Redis / MinIO / catalogo Overture Maps
 ```
 
 Inyección en `internal/app/app.go`. **Sin interfaces explícitas**; inyección directa por struct.
@@ -242,6 +242,7 @@ func TestXService_Get_NotFound_Returns_ErrXNotFound(t *testing.T) {
 | `internal/models/*.go` | Entidades y DTOs |
 | `pkg/apperr/apperr.go` | `*AppError`, helpers `BadRequest`/`Unauthorized`/`Internal`/... |
 | `pkg/response/response.go` | Envelope `{ data, error }` y helpers `OK`/`Created` |
-| `pkg/gmaps/client.go` | Cliente Google Maps (autocomplete, details) |
+| `pkg/catalog/*.go` | Catalogo local de lugares (Overture Maps) sobre `geo.place_catalog` |
+| `pkg/gmaplink/*.go` | Parser y resolutor de enlaces compartidos de Google Maps |
 | `pkg/database/postgres.go` | Pool pgx |
 | `db/migrations/` | Migraciones incrementales (golang-migrate) |

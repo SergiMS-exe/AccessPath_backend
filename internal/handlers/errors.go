@@ -78,21 +78,31 @@ var serviceErrorMappings = []serviceErrorMapping{
 		},
 	},
 	{
-		target: services.ErrGmapsQuotaExceeded,
-		matcher: func(t error) bool {
-			return errors.Is(t, services.ErrGmapsQuotaExceeded)
-		},
-		build: func(op string, _ error) *apperr.AppError {
-			return apperr.GmapsQuotaExceeded(op)
-		},
-	},
-	{
 		target: services.ErrPlaceClosedPermanently,
 		matcher: func(t error) bool {
 			return errors.Is(t, services.ErrPlaceClosedPermanently)
 		},
 		build: func(op string, _ error) *apperr.AppError {
 			return apperr.PlaceClosedPermanently()
+		},
+	},
+	{
+		target: services.ErrCatalogItemNotFound,
+		matcher: func(t error) bool {
+			return errors.Is(t, services.ErrCatalogItemNotFound)
+		},
+		build: func(op string, _ error) *apperr.AppError {
+			return apperr.NotFound(op, "CatalogItem")
+		},
+	},
+	{
+		target: services.ErrCatalogUnavailable,
+		matcher: func(t error) bool {
+			return errors.Is(t, services.ErrCatalogUnavailable)
+		},
+		build: func(op string, _ error) *apperr.AppError {
+			return apperr.New(op, "places.catalog_unavailable", 503,
+				"el catalogo de lugares no esta configurado", nil)
 		},
 	},
 	{

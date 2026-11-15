@@ -5,29 +5,7 @@ import (
 	"errors"
 
 	"accesspath/internal/models"
-
-	"accesspath/pkg/gmaps"
 )
-
-// GmapsClient es un stub de services.GmapsClient.
-type GmapsClient struct {
-	AutocompleteFn func(ctx context.Context, query, sessionToken string) ([]gmaps.AutocompleteItem, error)
-	DetailsFn      func(ctx context.Context, placeID, sessionToken string) (*gmaps.PlaceDetails, error)
-}
-
-func (f *GmapsClient) Autocomplete(ctx context.Context, query, sessionToken string) ([]gmaps.AutocompleteItem, error) {
-	if f.AutocompleteFn != nil {
-		return f.AutocompleteFn(ctx, query, sessionToken)
-	}
-	return nil, errors.New("GmapsClient.Autocomplete not stubbed")
-}
-
-func (f *GmapsClient) Details(ctx context.Context, placeID, sessionToken string) (*gmaps.PlaceDetails, error) {
-	if f.DetailsFn != nil {
-		return f.DetailsFn(ctx, placeID, sessionToken)
-	}
-	return nil, errors.New("GmapsClient.Details not stubbed")
-}
 
 // PhotoSvc es un stub de services.PhotoServiceInterface.
 type PhotoSvc struct {
@@ -71,15 +49,17 @@ func (f *SvcUser) Login(ctx context.Context, req models.LoginRequest) (*models.U
 
 // SvcPlace es un stub de services.PlaceService.
 type SvcPlace struct {
-	GetAllFn           func(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error)
-	GetByBoundsFn      func(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error)
-	GetNearbyFn        func(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error)
-	GetByIDFn          func(ctx context.Context, id int64) (*models.PlaceDetail, error)
-	CreateFn           func(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
-	UpdateFn           func(ctx context.Context, id, userID int64, req models.UpdatePlaceRequest) (*models.Place, error)
-	DeleteFn           func(ctx context.Context, id, userID int64) error
-	SearchFn           func(ctx context.Context, query, sessionToken string) ([]models.GoogleAutocompleteItem, error)
-	ImportFromGoogleFn func(ctx context.Context, googlePlaceID, sessionToken string, userID int64) (*models.Place, error)
+	GetAllFn            func(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error)
+	GetByBoundsFn       func(ctx context.Context, filters models.BoundsFilter) ([]models.PlaceMapItem, error)
+	GetNearbyFn         func(ctx context.Context, filters models.NearbyFilter) ([]models.PlaceWithDistance, error)
+	GetByIDFn           func(ctx context.Context, id int64) (*models.PlaceDetail, error)
+	CreateFn            func(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
+	UpdateFn            func(ctx context.Context, id, userID int64, req models.UpdatePlaceRequest) (*models.Place, error)
+	DeleteFn            func(ctx context.Context, id, userID int64) error
+	SearchFn            func(ctx context.Context, opts models.SearchOptions) ([]models.PlaceSearchItem, error)
+	ImportFromCatalogFn func(ctx context.Context, source, externalID string, placeID, userID int64) (*models.Place, error)
+	ResolveLinkFn       func(ctx context.Context, rawURL string) (*models.ResolvedLink, error)
+	CreateCommunityFn   func(ctx context.Context, req models.CreateCommunityPlaceRequest, userID int64) (*models.Place, bool, error)
 }
 
 func (f *SvcPlace) GetAll(ctx context.Context, filters models.PlaceFilters) (*models.PlaceListResult, error) {
@@ -131,18 +111,32 @@ func (f *SvcPlace) Delete(ctx context.Context, id, userID int64) error {
 	return errors.New("SvcPlace.Delete not stubbed")
 }
 
-func (f *SvcPlace) Search(ctx context.Context, query, sessionToken string) ([]models.GoogleAutocompleteItem, error) {
+func (f *SvcPlace) Search(ctx context.Context, opts models.SearchOptions) ([]models.PlaceSearchItem, error) {
 	if f.SearchFn != nil {
-		return f.SearchFn(ctx, query, sessionToken)
+		return f.SearchFn(ctx, opts)
 	}
 	return nil, errors.New("SvcPlace.Search not stubbed")
 }
 
-func (f *SvcPlace) ImportFromGoogle(ctx context.Context, googlePlaceID, sessionToken string, userID int64) (*models.Place, error) {
-	if f.ImportFromGoogleFn != nil {
-		return f.ImportFromGoogleFn(ctx, googlePlaceID, sessionToken, userID)
+func (f *SvcPlace) ImportFromCatalog(ctx context.Context, source, externalID string, placeID, userID int64) (*models.Place, error) {
+	if f.ImportFromCatalogFn != nil {
+		return f.ImportFromCatalogFn(ctx, source, externalID, placeID, userID)
 	}
-	return nil, errors.New("SvcPlace.ImportFromGoogle not stubbed")
+	return nil, errors.New("SvcPlace.ImportFromCatalog not stubbed")
+}
+
+func (f *SvcPlace) ResolveLink(ctx context.Context, rawURL string) (*models.ResolvedLink, error) {
+	if f.ResolveLinkFn != nil {
+		return f.ResolveLinkFn(ctx, rawURL)
+	}
+	return nil, errors.New("SvcPlace.ResolveLink not stubbed")
+}
+
+func (f *SvcPlace) CreateCommunity(ctx context.Context, req models.CreateCommunityPlaceRequest, userID int64) (*models.Place, bool, error) {
+	if f.CreateCommunityFn != nil {
+		return f.CreateCommunityFn(ctx, req, userID)
+	}
+	return nil, false, errors.New("SvcPlace.CreateCommunity not stubbed")
 }
 
 // SvcSubmission es un stub de services.SubmissionService.

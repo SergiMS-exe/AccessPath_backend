@@ -91,7 +91,7 @@ func TestPlaceHandler_GetAll_PassesThroughFilters(t *testing.T) {
 	w := do(r, http.MethodGet, "/places?limit=10&offset=5", "")
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.JSONEq(t, `{"data":{"places":[{"id":1,"code":"","name":"x","latitude":0,"longitude":0,"published":false,"created_by":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}],"total":1,"limit":10,"offset":5}}`, w.Body.String())
+	assert.JSONEq(t, `{"data":{"places":[{"id":1,"code":"","name":"x","latitude":0,"longitude":0,"source":"","published":false,"moderation_status":"","created_by":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}],"total":1,"limit":10,"offset":5}}`, w.Body.String())
 }
 
 func TestPlaceHandler_GetAll_InvalidLimitFallsBackToDefault(t *testing.T) {
@@ -282,10 +282,10 @@ func TestPlaceHandler_Search_MissingQueryReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestPlaceHandler_Search_GmapsNotConfiguredPropagates503(t *testing.T) {
+func TestPlaceHandler_Search_CatalogUnavailablePropagates503(t *testing.T) {
 	svc := &fakes.SvcPlace{}
-	svc.SearchFn = func(_ context.Context, _, _ string) ([]models.GoogleAutocompleteItem, error) {
-		return nil, apperr.GmapsNotConfigured("places.search")
+	svc.SearchFn = func(_ context.Context, _ models.SearchOptions) ([]models.PlaceSearchItem, error) {
+		return nil, services.ErrCatalogUnavailable
 	}
 	h := handlers.NewPlaceHandler(svc)
 	r := newPlaceRouter(http.MethodGet, "/places/search", false, h.Search)
@@ -295,54 +295,13 @@ func TestPlaceHandler_Search_GmapsNotConfiguredPropagates503(t *testing.T) {
 
 func TestPlaceHandler_Search_HappyPathReturns200(t *testing.T) {
 	svc := &fakes.SvcPlace{}
-	svc.SearchFn = func(_ context.Context, _, _ string) ([]models.GoogleAutocompleteItem, error) {
-		return []models.GoogleAutocompleteItem{{PlaceID: "p1"}}, nil
+	svc.SearchFn = func(_ context.Context, _ models.SearchOptions) ([]models.PlaceSearchItem, error) {
+		return []models.PlaceSearchItem{{PlaceID: "p1"}}, nil
 	}
 	h := handlers.NewPlaceHandler(svc)
 	r := newPlaceRouter(http.MethodGet, "/places/search", false, h.Search)
 	w := do(r, http.MethodGet, "/places/search?q=cafe", "")
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-// --- ImportFromGoogle -----------------------------------------------------
-
-func TestPlaceHandler_ImportFromGoogle_InvalidJSONReturns400(t *testing.T) {
-	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
-	r := newPlaceRouter(http.MethodPost, "/places/import", true, h.ImportFromGoogle)
-	w := do(r, http.MethodPost, "/places/import", `{"google_place_id":`)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestPlaceHandler_ImportFromGoogle_MissingUserIDReturns401(t *testing.T) {
-	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
-	r := newPlaceRouter(http.MethodPost, "/places/import", false, h.ImportFromGoogle)
-	body := `{"google_place_id":"pid-123","session_token":"sess"}`
-	w := do(r, http.MethodPost, "/places/import", body)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestPlaceHandler_ImportFromGoogle_GmapsNotConfiguredPropagates503(t *testing.T) {
-	svc := &fakes.SvcPlace{}
-	svc.ImportFromGoogleFn = func(_ context.Context, _, _ string, _ int64) (*models.Place, error) {
-		return nil, apperr.GmapsNotConfigured("places.import")
-	}
-	h := handlers.NewPlaceHandler(svc)
-	r := newPlaceRouter(http.MethodPost, "/places/import", true, h.ImportFromGoogle)
-	body := `{"google_place_id":"pid-123","session_token":"sess"}`
-	w := do(r, http.MethodPost, "/places/import", body)
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
-}
-
-func TestPlaceHandler_ImportFromGoogle_HappyPathReturns201(t *testing.T) {
-	svc := &fakes.SvcPlace{}
-	svc.ImportFromGoogleFn = func(_ context.Context, _, _ string, userID int64) (*models.Place, error) {
-		return &models.Place{ID: 7, CreatedBy: userID}, nil
-	}
-	h := handlers.NewPlaceHandler(svc)
-	r := newPlaceRouter(http.MethodPost, "/places/import", true, h.ImportFromGoogle)
-	body := `{"google_place_id":"pid-123","session_token":"sess"}`
-	w := do(r, http.MethodPost, "/places/import", body)
-	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 // --- Create ---------------------------------------------------------------
@@ -477,4 +436,145 @@ func TestPlaceHandler_Delete_HappyPathReturns204(t *testing.T) {
 	r := newPlaceRouter(http.MethodDelete, "/places/:id", true, h.Delete)
 	w := do(r, http.MethodDelete, "/places/1", "")
 	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+// --- ImportFromCatalog ----------------------------------------------------
+
+func TestPlaceHandler_ImportFromCatalog_InvalidJSONReturns400(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", true, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"external_id":`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPlaceHandler_ImportFromCatalog_MissingUserIDReturns401(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", false, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"external_id":"gers-1"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestPlaceHandler_ImportFromCatalog_HappyPathReturns201(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.ImportFromCatalogFn = func(_ context.Context, source, externalID string, placeID, userID int64) (*models.Place, error) {
+		assert.Equal(t, "overture", source)
+		assert.Equal(t, "gers-1", externalID)
+		assert.Equal(t, int64(0), placeID)
+		assert.Equal(t, int64(42), userID)
+		return &models.Place{ID: 5, Name: "X", Source: "overture"}, nil
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", true, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"source":"overture","external_id":"gers-1"}`)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestPlaceHandler_ImportFromCatalog_NotFoundMapsTo404(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.ImportFromCatalogFn = func(_ context.Context, _, _ string, _, _ int64) (*models.Place, error) {
+		return nil, services.ErrCatalogItemNotFound
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", true, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"external_id":"nope"}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestPlaceHandler_ImportFromCatalog_MissingReferenceReturns400(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", true, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"source":"overture"}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPlaceHandler_ImportFromCatalog_ByPlaceIDReturns201(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.ImportFromCatalogFn = func(_ context.Context, source, externalID string, placeID, userID int64) (*models.Place, error) {
+		assert.Empty(t, source)
+		assert.Empty(t, externalID)
+		assert.Equal(t, int64(12), placeID)
+		return &models.Place{ID: 12, Name: "Local"}, nil
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/from-catalog", true, h.ImportFromCatalog)
+	w := do(r, http.MethodPost, "/places/from-catalog", `{"place_id":12}`)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+// --- ResolveLink ----------------------------------------------------------
+
+func TestPlaceHandler_ResolveLink_MissingUserIDReturns401(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/resolve-link", false, h.ResolveLink)
+	w := do(r, http.MethodPost, "/places/resolve-link", `{"url":"https://maps.app.goo.gl/x"}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestPlaceHandler_ResolveLink_InvalidBodyReturns400(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/resolve-link", true, h.ResolveLink)
+	w := do(r, http.MethodPost, "/places/resolve-link", `{}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPlaceHandler_ResolveLink_HappyPathReturns200(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.ResolveLinkFn = func(_ context.Context, rawURL string) (*models.ResolvedLink, error) {
+		assert.Contains(t, rawURL, "maps.app.goo.gl")
+		return &models.ResolvedLink{Matched: true}, nil
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/resolve-link", true, h.ResolveLink)
+	w := do(r, http.MethodPost, "/places/resolve-link", `{"url":"https://maps.app.goo.gl/abc"}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"data":{"matched":true}}`, w.Body.String())
+}
+
+// --- CreateCommunity ------------------------------------------------------
+
+func TestPlaceHandler_CreateCommunity_MissingUserIDReturns401(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/community", false, h.CreateCommunity)
+	w := do(r, http.MethodPost, "/places/community", `{"name":"X","address":"Y","latitude":1,"longitude":2}`)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestPlaceHandler_CreateCommunity_EmptyAddressReturns400(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/community", true, h.CreateCommunity)
+	w := do(r, http.MethodPost, "/places/community", `{"name":"X","address":"  ","latitude":43.4,"longitude":-5.8}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPlaceHandler_CreateCommunity_InvalidLatitudeReturns400(t *testing.T) {
+	h := handlers.NewPlaceHandler(&fakes.SvcPlace{})
+	r := newPlaceRouter(http.MethodPost, "/places/community", true, h.CreateCommunity)
+	w := do(r, http.MethodPost, "/places/community", `{"name":"X","address":"Y","latitude":200,"longitude":-5.8}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestPlaceHandler_CreateCommunity_CreatedReturns201(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.CreateCommunityFn = func(_ context.Context, req models.CreateCommunityPlaceRequest, userID int64) (*models.Place, bool, error) {
+		assert.Equal(t, "Bar Nuevo", req.Name)
+		assert.Equal(t, int64(42), userID)
+		return &models.Place{ID: 9, Name: req.Name, ModerationStatus: "pending", Source: "community"}, true, nil
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/community", true, h.CreateCommunity)
+	w := do(r, http.MethodPost, "/places/community",
+		`{"name":"Bar Nuevo","address":"Calle X, 1","latitude":43.4,"longitude":-5.8}`)
+	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestPlaceHandler_CreateCommunity_DuplicateReturns200(t *testing.T) {
+	svc := &fakes.SvcPlace{}
+	svc.CreateCommunityFn = func(_ context.Context, _ models.CreateCommunityPlaceRequest, _ int64) (*models.Place, bool, error) {
+		return &models.Place{ID: 9, Name: "Bar Nuevo"}, false, nil
+	}
+	h := handlers.NewPlaceHandler(svc)
+	r := newPlaceRouter(http.MethodPost, "/places/community", true, h.CreateCommunity)
+	w := do(r, http.MethodPost, "/places/community",
+		`{"name":"Bar Nuevo","address":"Calle X, 1","latitude":43.4,"longitude":-5.8}`)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

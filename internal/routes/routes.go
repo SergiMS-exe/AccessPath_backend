@@ -50,6 +50,10 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 	rlRegister := middleware.RateLimit(cache, middleware.KeyByIP, 3, time.Hour)
 	rlRefresh := middleware.RateLimit(cache, middleware.KeyByIP, 30, time.Minute)
 	rlSearch := middleware.RateLimit(cache, middleware.KeyByIP, 10, time.Second)
+	// Fallback comunitario: resolver enlaces y crear sitios son operaciones
+	// caras y abusables. Plan: 10 enlaces/hora y 5 altas/dia por usuario.
+	rlResolveLink := middleware.RateLimit(cache, middleware.KeyByUserID, 10, time.Hour)
+	rlCommunity := middleware.RateLimit(cache, middleware.KeyByUserID, 5, 24*time.Hour)
 
 	v1 := r.Group("/api/v1")
 	{
@@ -78,9 +82,11 @@ func Setup(h *Handlers, cache *redis.Client, cfg *config.Config) *gin.Engine {
 			places.GET("/map", h.Place.GetByBounds)
 			places.GET("/nearby", middleware.Cache(cache, "nearby"), h.Place.GetNearby)
 			places.GET("/search", rlSearch, h.Place.Search)
+			places.POST("/from-catalog", auth, h.Place.ImportFromCatalog)
+			places.POST("/resolve-link", auth, rlResolveLink, h.Place.ResolveLink)
+			places.POST("/community", auth, rlCommunity, h.Place.CreateCommunity)
 			places.GET("/:id", h.Place.GetByID)
 			places.POST("", auth, h.Place.Create)
-			places.POST("/from-google", auth, h.Place.ImportFromGoogle)
 			places.PUT("/:id", auth, h.Place.Update)
 			places.DELETE("/:id", auth, h.Place.Delete)
 

@@ -163,6 +163,19 @@ func (h *PlaceHandler) GetByID(c *gin.Context) {
 	response.OK(c, detail)
 }
 
+// Search godoc
+// @Summary      Busca lugares por texto
+// @Description  Busca en el catalogo local (Overture Maps) y en los lugares ya verificados.
+// @Tags         places
+// @Produce      json
+// @Param        q       query  string  true   "Texto a buscar (minimo 3 caracteres)"
+// @Param        lat     query  number  false  "Latitud del usuario (opcional, anade distancia)"
+// @Param        lng     query  number  false  "Longitud del usuario (opcional, anade distancia)"
+// @Param        limit   query  int     false  "Maximo de resultados"  default(10)
+// @Success      200  {object}  map[string][]models.PlaceSearchItem
+// @Failure      400  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /places/search [get]
 func (h *PlaceHandler) Search(c *gin.Context) {
 	q := c.Query("q")
 	if q == "" {
@@ -170,17 +183,67 @@ func (h *PlaceHandler) Search(c *gin.Context) {
 			"q is required"))
 		return
 	}
-	session := c.Query("session")
 
-	items, err := h.service.Search(c.Request.Context(), q, session)
+	limit := parseIntOrDefault(c.Query("limit"), 10)
+	if limit < 1 {
+		limit = 10
+	}
+	if limit > 20 {
+		limit = 20
+	}
+
+	opts := models.SearchOptions{
+		Query: q,
+		Limit: limit,
+	}
+
+	if raw := c.Query("lat"); raw != "" {
+		lat, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			Respond(c, apperr.Validation("places.search", "lat", "debe ser un numero"))
+			return
+		}
+		if err := validate.Lat(lat); err != nil {
+			Respond(c, apperr.Validation("places.search", "lat", err.Error()))
+			return
+		}
+		opts.Latitude = &lat
+	}
+	if raw := c.Query("lng"); raw != "" {
+		lng, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			Respond(c, apperr.Validation("places.search", "lng", "debe ser un numero"))
+			return
+		}
+		if err := validate.Lng(lng); err != nil {
+			Respond(c, apperr.Validation("places.search", "lng", err.Error()))
+			return
+		}
+		opts.Longitude = &lng
+	}
+
+	items, err := h.service.Search(c.Request.Context(), opts)
 	if Respond(c, err) {
 		return
 	}
 	response.OK(c, items)
 }
 
-func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
-	var req models.ImportFromGoogleRequest
+// ImportFromCatalog godoc
+// @Summary      Importa un lugar del catalogo externo
+// @Description  Copia a la base local una ficha del catalogo (Overture Maps). Idempotente por (source, external_id). Si se envia place_id devuelve ese lugar local ya existente.
+// @Tags         places
+// @Accept       json
+// @Produce      json
+// @Param        body  body  models.ImportFromCatalogRequest  true  "source + external_id, o place_id"
+// @Success      201  {object}  map[string]models.Place
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Failure      400  {object}  map[string]string
+// @Router       /places/from-catalog [post]
+func (h *PlaceHandler) ImportFromCatalog(c *gin.Context) {
+	var req models.ImportFromCatalogRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		Respond(c, apperr.BadRequest("places.import", "places.invalid_body", err.Error()))
 		return
@@ -192,12 +255,144 @@ func (h *PlaceHandler) ImportFromGoogle(c *gin.Context) {
 		return
 	}
 
-	place, err := h.service.ImportFromGoogle(c.Request.Context(), req.GooglePlaceID, req.SessionToken, userID)
+	if req.PlaceID <= 0 && req.ExternalID == "" {
+		Respond(c, apperr.BadRequest("places.import", "places.missing_reference",
+			"external_id o place_id es obligatorio"))
+		return
+	}
+
+	place, err := h.service.ImportFromCatalog(c.Request.Context(), req.Source, req.ExternalID, req.PlaceID, userID)
 	if Respond(c, err) {
 		return
 	}
 
 	c.JSON(http.StatusCreated, response.Wrap(place))
+}
+
+// ResolveLink godoc
+// @Summary      Lee un enlace de Google Maps
+// @Description  Extrae nombre, coordenadas y ftid de un enlace compartido por el usuario y busca el sitio en el catalogo. No descarga la ficha de Google ni usa su API.
+// @Tags         places
+// @Accept       json
+// @Produce      json
+// @Param        body  body  models.ResolveLinkRequest  true  "url del enlace"
+// @Success      200  {object}  map[string]models.ResolvedLink
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Router       /places/resolve-link [post]
+func (h *PlaceHandler) ResolveLink(c *gin.Context) {
+	var req models.ResolveLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Respond(c, apperr.BadRequest("places.resolve_link", "places.invalid_body", err.Error()))
+		return
+	}
+
+	// El endpoint es autenticado (para poder limitar el uso por usuario),
+	// aunque el enlace no se asocia a ninguna fila.
+	if _, ok := middleware.UserID(c); !ok {
+		Respond(c, apperr.Unauthorized("places.resolve_link", "token requerido"))
+		return
+	}
+
+	if err := validate.MaxLen(req.URL, "url", 2048); err != nil {
+		Respond(c, apperr.Validation("places.resolve_link", "url", err.Error()))
+		return
+	}
+
+	resolved, err := h.service.ResolveLink(c.Request.Context(), req.URL)
+	if Respond(c, err) {
+		return
+	}
+
+	response.OK(c, resolved)
+}
+
+// CreateCommunity godoc
+// @Summary      Crea un lugar comunitario pendiente de moderacion
+// @Description  Crea el sitio que el usuario no encontro en el catalogo. Nace con moderation_status=pending: no aparece en el mapa ni en el buscador hasta que se verifica. Si ya existe un lugar parecido a menos de 50 m devuelve el existente con 200.
+// @Tags         places
+// @Accept       json
+// @Produce      json
+// @Param        body  body  models.CreateCommunityPlaceRequest  true  "datos del sitio"
+// @Success      201  {object}  map[string]models.Place
+// @Success      200  {object}  map[string]models.Place
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Router       /places/community [post]
+func (h *PlaceHandler) CreateCommunity(c *gin.Context) {
+	userID, ok := middleware.UserID(c)
+	if !ok {
+		Respond(c, apperr.Unauthorized("places.community", "token requerido"))
+		return
+	}
+
+	var req models.CreateCommunityPlaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Respond(c, apperr.BadRequest("places.community", "places.invalid_body", err.Error()))
+		return
+	}
+
+	if err := validateCommunityRequest(req); err != nil {
+		Respond(c, err)
+		return
+	}
+
+	place, created, err := h.service.CreateCommunity(c.Request.Context(), req, userID)
+	if Respond(c, err) {
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, response.Wrap(place))
+}
+
+// validateCommunityRequest aplica las mismas reglas que el resto de altas:
+// nombre, direccion, coordenadas y longitudes maximas.
+func validateCommunityRequest(req models.CreateCommunityPlaceRequest) *apperr.AppError {
+	op := "places.community"
+
+	if err := validate.NonEmpty(req.Name, "name"); err != nil {
+		return apperr.Validation(op, "name", err.Error())
+	}
+	if err := validate.MaxLen(req.Name, "name", 255); err != nil {
+		return apperr.Validation(op, "name", err.Error())
+	}
+	if err := validate.NonEmpty(req.Address, "address"); err != nil {
+		return apperr.Validation(op, "address", err.Error())
+	}
+	if err := validate.MaxLen(req.Address, "address", 500); err != nil {
+		return apperr.Validation(op, "address", err.Error())
+	}
+	if err := validate.Lat(req.Latitude); err != nil {
+		return apperr.Validation(op, "latitude", err.Error())
+	}
+	if err := validate.Lng(req.Longitude); err != nil {
+		return apperr.Validation(op, "longitude", err.Error())
+	}
+	if req.Category != nil {
+		if err := validate.MaxLen(*req.Category, "category", 100); err != nil {
+			return apperr.Validation(op, "category", err.Error())
+		}
+	}
+	if req.Description != nil {
+		if err := validate.MaxLen(*req.Description, "description", 2000); err != nil {
+			return apperr.Validation(op, "description", err.Error())
+		}
+	}
+	if req.SourceURL != nil {
+		if err := validate.MaxLen(*req.SourceURL, "source_url", 2048); err != nil {
+			return apperr.Validation(op, "source_url", err.Error())
+		}
+	}
+	if req.GoogleFTID != nil {
+		if err := validate.MaxLen(*req.GoogleFTID, "google_ftid", 128); err != nil {
+			return apperr.Validation(op, "google_ftid", err.Error())
+		}
+	}
+	return nil
 }
 
 func (h *PlaceHandler) Create(c *gin.Context) {

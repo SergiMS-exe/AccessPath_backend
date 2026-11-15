@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -25,8 +26,10 @@ type Config struct {
 	// de MinIO (solo valido en desarrollo local).
 	MinioPublicBaseURL string
 
-	GMapsAPIKey      string
-	GMapsMonthlyLimit int
+	// PlacesLinkTimeout y PlacesLinkMaxRedirects acotan la resolucion de
+	// enlaces de Google Maps (timeout por peticion y saltos maximos).
+	PlacesLinkTimeout      time.Duration
+	PlacesLinkMaxRedirects int
 
 	Accessibility *AccessibilityThresholds
 }
@@ -43,15 +46,15 @@ func Load() *Config {
 		JWTSecret:   getEnv("JWT_SECRET", "cambia-esto-en-produccion"),
 		Env:         getEnv("ENV", "development"),
 
-		MinioEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
-		MinioAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-		MinioSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
-		MinioBucket:    getEnv("MINIO_BUCKET", "accesspath"),
-		MinioUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+		MinioEndpoint:      getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinioAccessKey:     getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey:     getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinioBucket:        getEnv("MINIO_BUCKET", "accesspath"),
+		MinioUseSSL:        getEnv("MINIO_USE_SSL", "false") == "true",
 		MinioPublicBaseURL: getEnv("MINIO_PUBLIC_BASE_URL", ""),
 
-		GMapsAPIKey:      getEnv("GOOGLE_MAPS_API_KEY", ""),
-		GMapsMonthlyLimit: getEnvInt("GOOGLE_MAPS_MONTHLY_LIMIT", 500),
+		PlacesLinkTimeout:      getEnvDuration("PLACES_LINK_TIMEOUT", 5*time.Second),
+		PlacesLinkMaxRedirects: getEnvInt("PLACES_LINK_MAX_REDIRECTS", 3),
 
 		Accessibility: LoadAccessibilityThresholds(getEnv("ACCESSIBILITY_CONFIG_PATH", "config/accessibility.json")),
 	}
@@ -68,6 +71,15 @@ func getEnvInt(key string, fallback int) int {
 	if val := os.Getenv(key); val != "" {
 		if n, err := strconv.Atoi(val); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			return d
 		}
 	}
 	return fallback

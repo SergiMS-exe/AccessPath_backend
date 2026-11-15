@@ -91,8 +91,9 @@ users ──< places (created_by)
 - Soft delete con `deleted_at` en users, places, reviews, photos, collections.
 - Ratings materializados en `place_rating_cache`, recalculados en la misma transaccion.
 - Busqueda geografica sin PostGIS: bounding box + Haversine en SQL.
-- **`place.published`**: un lugar importado de Google nace `false` (sirve de cache
-  anti-duplicados por `google_place_id`, pero oculto en el mapa). Pasa a `true` en su
+- **`place.published`**: un lugar importado del catalogo local (`geo.place_catalog`,
+  cargado desde Overture Maps) o creado por la comunidad nace `false` (sirve de cache
+  anti-duplicados por `(source, external_id)`, pero oculto en el mapa). Pasa a `true` en su
   primera valoracion (`ReviewService.Create` -> `PlaceRepository.MarkPublishedTx`, misma tx).
   `GET /places/map` filtra `published = TRUE`. Indice parcial `idx_place_published_location`.
 

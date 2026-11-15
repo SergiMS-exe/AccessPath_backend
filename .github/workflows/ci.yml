@@ -56,8 +56,9 @@ jobs:
       - name: Verificar Swagger sincronizado
         run: |
           go install github.com/swaggo/swag/cmd/swag@v1.16.3
-          swag init -g cmd/server/main.go -o /tmp/swag-docs
-          if ! diff -r docs /tmp/swag-docs --exclude='*.md' --brief; then
+          mkdir -p /tmp/swag-check
+          swag init -g cmd/server/main.go -o /tmp/swag-check/docs
+          if ! diff -r docs /tmp/swag-check/docs --exclude='*.md' --brief; then
             echo "docs/ esta desincronizado. Ejecuta 'swag init -g cmd/server/main.go' y commitea."
             exit 1
           fi

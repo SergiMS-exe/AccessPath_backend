@@ -64,7 +64,9 @@ type RepoPlace struct {
 	FindByBoundsFn         func(ctx context.Context, f models.BoundsFilter) ([]models.Place, error)
 	FindNearbyFn           func(ctx context.Context, f models.NearbyFilter) ([]models.PlaceWithDistance, error)
 	CreateFn               func(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
-	FindByGooglePlaceIDFn  func(ctx context.Context, googlePlaceID string) (*models.Place, error)
+	FindBySourceExternalFn func(ctx context.Context, source, externalID string) (*models.Place, error)
+	SearchVerifiedFn       func(ctx context.Context, query string, limit int) ([]models.Place, error)
+	FindSimilarFn          func(ctx context.Context, lat, lng, radiusMeters float64, name string) (*models.Place, error)
 	MarkPublishedTxFn      func(ctx context.Context, tx pgx.Tx, placeID int64) error
 	UpdateFn               func(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error)
 	DeleteFn               func(ctx context.Context, id int64) error
@@ -115,11 +117,25 @@ func (f *RepoPlace) Create(ctx context.Context, req models.CreatePlaceRequest) (
 	return nil, errors.New("RepoPlace.Create not stubbed")
 }
 
-func (f *RepoPlace) FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error) {
-	if f.FindByGooglePlaceIDFn != nil {
-		return f.FindByGooglePlaceIDFn(ctx, googlePlaceID)
+func (f *RepoPlace) FindBySourceExternalID(ctx context.Context, source, externalID string) (*models.Place, error) {
+	if f.FindBySourceExternalFn != nil {
+		return f.FindBySourceExternalFn(ctx, source, externalID)
 	}
-	return nil, errors.New("RepoPlace.FindByGooglePlaceID not stubbed")
+	return nil, errors.New("RepoPlace.FindBySourceExternalID not stubbed")
+}
+
+func (f *RepoPlace) SearchVerified(ctx context.Context, query string, limit int) ([]models.Place, error) {
+	if f.SearchVerifiedFn != nil {
+		return f.SearchVerifiedFn(ctx, query, limit)
+	}
+	return nil, errors.New("RepoPlace.SearchVerified not stubbed")
+}
+
+func (f *RepoPlace) FindSimilar(ctx context.Context, lat, lng, radiusMeters float64, name string) (*models.Place, error) {
+	if f.FindSimilarFn != nil {
+		return f.FindSimilarFn(ctx, lat, lng, radiusMeters, name)
+	}
+	return nil, errors.New("RepoPlace.FindSimilar not stubbed")
 }
 
 func (f *RepoPlace) MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error {
@@ -394,24 +410,4 @@ func (f *RepoProfile) ClearConsentTx(ctx context.Context, tx pgx.Tx, userID int6
 		return f.ClearConsentTxFn(ctx, tx, userID)
 	}
 	return errors.New("RepoProfile.ClearConsentTx not stubbed")
-}
-
-// RepoGmapsLog es un stub de repositories.GmapsLogRepository.
-type RepoGmapsLog struct {
-	CountThisMonthFn func(ctx context.Context) (int, error)
-	LogFn            func(ctx context.Context) error
-}
-
-func (f *RepoGmapsLog) CountThisMonth(ctx context.Context) (int, error) {
-	if f.CountThisMonthFn != nil {
-		return f.CountThisMonthFn(ctx)
-	}
-	return 0, errors.New("RepoGmapsLog.CountThisMonth not stubbed")
-}
-
-func (f *RepoGmapsLog) Log(ctx context.Context) error {
-	if f.LogFn != nil {
-		return f.LogFn(ctx)
-	}
-	return errors.New("RepoGmapsLog.Log not stubbed")
 }

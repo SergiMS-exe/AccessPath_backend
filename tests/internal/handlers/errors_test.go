@@ -83,7 +83,9 @@ func TestRespond_SentinelMappingToCorrectStatus(t *testing.T) {
 		{"ErrNotOwner -> 401", services.ErrNotOwner, http.StatusUnauthorized},
 		{"ErrEmptySubmission -> 400", services.ErrEmptySubmission, http.StatusBadRequest},
 		{"ErrContributionNotFound -> 404", services.ErrContributionNotFound, http.StatusNotFound},
-		{"ErrGmapsQuotaExceeded -> 429", services.ErrGmapsQuotaExceeded, http.StatusTooManyRequests},
+		{"ErrPlaceClosedPermanently -> 400", services.ErrPlaceClosedPermanently, http.StatusBadRequest},
+		{"ErrCatalogItemNotFound -> 404", services.ErrCatalogItemNotFound, http.StatusNotFound},
+		{"ErrCatalogUnavailable -> 503", services.ErrCatalogUnavailable, http.StatusServiceUnavailable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

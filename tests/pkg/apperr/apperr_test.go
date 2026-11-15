@@ -146,78 +146,10 @@ func TestUnauthorized(t *testing.T) {
 	assert.Equal(t, "credenciales invalidas", ae.UserMessage)
 }
 
-func TestGmapsNotConfigured(t *testing.T) {
-	ae := apperr.GmapsNotConfigured("places.search")
-
-	assert.Equal(t, "gmaps.not_configured", ae.Code)
-	assert.Equal(t, http.StatusServiceUnavailable, ae.HTTPStatus)
-	assert.NotEmpty(t, ae.UserMessage)
-}
-
-func TestGmapsRequestDenied(t *testing.T) {
-	cause := errors.New("API key invalid")
-	ae := apperr.GmapsRequestDenied("places.search", cause)
-
-	assert.Equal(t, "gmaps.request_denied", ae.Code)
-	assert.Equal(t, http.StatusBadGateway, ae.HTTPStatus)
-	assert.Same(t, cause, ae.Cause)
-}
-
-func TestGmapsQuotaExceeded(t *testing.T) {
-	ae := apperr.GmapsQuotaExceeded("places.search")
-
-	assert.Equal(t, "gmaps.quota_exceeded", ae.Code)
-	assert.Equal(t, http.StatusTooManyRequests, ae.HTTPStatus)
-}
-
-func TestGmapsInvalidRequest(t *testing.T) {
-	ae := apperr.GmapsInvalidRequest("places.search", "empty input")
-
-	assert.Equal(t, "gmaps.invalid_request", ae.Code)
-	assert.Equal(t, http.StatusBadGateway, ae.HTTPStatus)
-	assert.Error(t, ae.Cause)
-	assert.Contains(t, ae.Cause.Error(), "empty input")
-}
-
-func TestGmapsUpstream(t *testing.T) {
-	cause := errors.New("UNKNOWN_ERROR")
-	ae := apperr.GmapsUpstream("places.search", "UNKNOWN_ERROR", cause)
-
-	assert.Equal(t, "gmaps.upstream_error", ae.Code)
-	assert.Equal(t, http.StatusBadGateway, ae.HTTPStatus)
-	assert.Same(t, cause, ae.Cause)
-	assert.Equal(t, "UNKNOWN_ERROR", ae.Meta["gmaps_status"])
-}
-
-func TestGmapsUpstream_NilCause(t *testing.T) {
-	ae := apperr.GmapsUpstream("places.search", "UNKNOWN_ERROR", nil)
-
-	assert.Nil(t, ae.Cause)
-	assert.Equal(t, "UNKNOWN_ERROR", ae.Meta["gmaps_status"])
-}
-
-func TestGmapsNetwork(t *testing.T) {
-	cause := errors.New("dial tcp: timeout")
-	ae := apperr.GmapsNetwork("places.search", cause)
-
-	assert.Equal(t, "gmaps.network_error", ae.Code)
-	assert.Equal(t, http.StatusBadGateway, ae.HTTPStatus)
-	assert.Same(t, cause, ae.Cause)
-}
-
 func TestPlaceClosedPermanently(t *testing.T) {
 	ae := apperr.PlaceClosedPermanently()
 
 	assert.Equal(t, "places.closed_permanently", ae.Code)
 	assert.Equal(t, http.StatusBadRequest, ae.HTTPStatus)
 	assert.Contains(t, ae.UserMessage, "cerrado")
-}
-
-func TestPlaceSearchFailed(t *testing.T) {
-	cause := errors.New("upstream timeout")
-	ae := apperr.PlaceSearchFailed(cause)
-
-	assert.Equal(t, "places.search_failed", ae.Code)
-	assert.Equal(t, http.StatusInternalServerError, ae.HTTPStatus)
-	assert.Same(t, cause, ae.Cause)
 }

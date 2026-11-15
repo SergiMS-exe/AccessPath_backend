@@ -18,7 +18,9 @@ type PlaceRepository interface {
 	FindByBounds(ctx context.Context, f models.BoundsFilter) ([]models.Place, error)
 	FindNearby(ctx context.Context, f models.NearbyFilter) ([]models.PlaceWithDistance, error)
 	Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error)
-	FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error)
+	FindBySourceExternalID(ctx context.Context, source, externalID string) (*models.Place, error)
+	SearchVerified(ctx context.Context, query string, limit int) ([]models.Place, error)
+	FindSimilar(ctx context.Context, lat, lng, radiusMeters float64, name string) (*models.Place, error)
 	MarkPublishedTx(ctx context.Context, tx pgx.Tx, placeID int64) error
 	Update(ctx context.Context, id int64, req models.UpdatePlaceRequest) (*models.Place, error)
 	Delete(ctx context.Context, id int64) error
@@ -39,8 +41,8 @@ var _ PlaceRepository = (*pgPlaceRepository)(nil)
 
 // Listas de columnas reutilizables. El escaneo a struct es por nombre (tags `db`),
 // asi que el ORDEN aqui no tiene que coincidir con el de los campos del struct.
-const placeColumns = `id, code, name, address, latitude, longitude, description, google_place_id, published, created_by, created_at, updated_at, deleted_at`
-const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.google_place_id, p.published, p.created_by, p.created_at, p.updated_at, p.deleted_at`
+const placeColumns = `id, code, name, address, latitude, longitude, description, source, external_id, google_ftid, source_url, published, moderation_status, created_by, created_at, updated_at, deleted_at`
+const placeColumnsP = `p.id, p.code, p.name, p.address, p.latitude, p.longitude, p.description, p.source, p.external_id, p.google_ftid, p.source_url, p.published, p.moderation_status, p.created_by, p.created_at, p.updated_at, p.deleted_at`
 
 // aggSelect es la proyeccion comun del join criterion+dimension+cache a CriterionAggRow.
 const aggSelect = `
@@ -57,6 +59,7 @@ func (r *pgPlaceRepository) FindAll(ctx context.Context, filters models.PlaceFil
 		`SELECT COUNT(*)
 		 FROM place p
 		 WHERE p.deleted_at IS NULL
+		   AND p.moderation_status = 'verified'
 		   AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')`,
 		filters.Search).Scan(&total)
 	if err != nil {
@@ -67,6 +70,7 @@ func (r *pgPlaceRepository) FindAll(ctx context.Context, filters models.PlaceFil
 		`SELECT `+placeColumnsP+`
 		 FROM place p
 		 WHERE p.deleted_at IS NULL
+		   AND p.moderation_status = 'verified'
 		   AND ($1::text = '' OR p.name ILIKE '%' || $1 || '%' OR p.address ILIKE '%' || $1 || '%')
 		 ORDER BY p.created_at DESC
 		 LIMIT $2 OFFSET $3`,
@@ -118,6 +122,7 @@ func (r *pgPlaceRepository) FindByBounds(ctx context.Context, f models.BoundsFil
 		 FROM place p
 		 WHERE p.deleted_at IS NULL
 		   AND p.published = TRUE
+		   AND p.moderation_status = 'verified'
 		   AND p.latitude  BETWEEN $1 AND $2
 		   AND p.longitude BETWEEN $3 AND $4
 		 ORDER BY p.created_at DESC
@@ -142,6 +147,7 @@ func (r *pgPlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilte
 		 (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) AS distance
 		 FROM place
 		 WHERE deleted_at IS NULL
+		   AND moderation_status = 'verified'
 		   AND (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) < $3
 		 ORDER BY distance
 		 LIMIT $4 OFFSET $5`,
@@ -154,10 +160,14 @@ func (r *pgPlaceRepository) FindNearby(ctx context.Context, f models.NearbyFilte
 
 func (r *pgPlaceRepository) Create(ctx context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
-		`INSERT INTO place (name, address, latitude, longitude, description, google_place_id, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO place (name, address, latitude, longitude, description,
+		                    source, external_id, google_ftid, source_url, moderation_status, created_by)
+		 VALUES ($1, $2, $3, $4, $5,
+		         COALESCE($6::text, 'community'), $7, $8, $9,
+		         COALESCE($10::text, 'verified'), $11)
 		 RETURNING `+placeColumns,
-		req.Name, req.Address, req.Latitude, req.Longitude, req.Description, req.GooglePlaceID, req.CreatedBy)
+		req.Name, req.Address, req.Latitude, req.Longitude, req.Description,
+		req.Source, req.ExternalID, req.GoogleFTID, req.SourceURL, req.ModerationStatus, req.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -168,10 +178,75 @@ func (r *pgPlaceRepository) Create(ctx context.Context, req models.CreatePlaceRe
 	return &place, nil
 }
 
-func (r *pgPlaceRepository) FindByGooglePlaceID(ctx context.Context, googlePlaceID string) (*models.Place, error) {
+// FindBySourceExternalID busca un lugar ya importado desde un proveedor
+// concreto. Devuelve pgx.ErrNoRows si no existe.
+func (r *pgPlaceRepository) FindBySourceExternalID(ctx context.Context, source, externalID string) (*models.Place, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT `+placeColumns+` FROM place WHERE google_place_id = $1 AND deleted_at IS NULL`,
-		googlePlaceID)
+		`SELECT `+placeColumns+`
+		 FROM place
+		 WHERE source = $1 AND external_id = $2 AND deleted_at IS NULL`,
+		source, externalID)
+	if err != nil {
+		return nil, err
+	}
+	place, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[models.Place])
+	if err != nil {
+		return nil, err
+	}
+	return &place, nil
+}
+
+// SearchVerified busca lugares creados o verificados en nuestra propia tabla
+// (los que no vienen del catalogo externo). Solo devuelve filas verificadas.
+func (r *pgPlaceRepository) SearchVerified(ctx context.Context, query string, limit int) ([]models.Place, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := r.db.Query(ctx,
+		`SELECT `+placeColumns+`
+		 FROM place
+		 WHERE deleted_at IS NULL
+		   AND moderation_status = 'verified'
+		   AND (
+		         strpos(lower(name), lower($1)) > 0
+		      OR strpos(lower(COALESCE(address, '')), lower($1)) > 0
+		      OR similarity(name, $1) > 0.2
+		   )
+		 ORDER BY
+		     (lower(name) = lower($1)) DESC,
+		     starts_with(lower(name), lower($1)) DESC,
+		     similarity(name, $1) DESC,
+		     created_at DESC
+		 LIMIT $2`,
+		query, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.Place])
+}
+
+// FindSimilar busca un lugar ya existente (a menos de radiusMeters y con un
+// nombre parecido) para no crear duplicados comunitarios. Devuelve
+// pgx.ErrNoRows si no hay ninguno.
+func (r *pgPlaceRepository) FindSimilar(ctx context.Context, lat, lng, radiusMeters float64, name string) (*models.Place, error) {
+	if radiusMeters <= 0 {
+		radiusMeters = 50
+	}
+
+	rows, err := r.db.Query(ctx,
+		`SELECT `+placeColumns+`
+		 FROM place
+		 WHERE deleted_at IS NULL
+		   AND moderation_status <> 'rejected'
+		   AND latitude BETWEEN $1 - ($3 / 111320.0) AND $1 + ($3 / 111320.0)
+		   AND longitude BETWEEN $2 - ($3 / (111320.0 * GREATEST(cos(radians($1)), 0.01)))
+		                        AND $2 + ($3 / (111320.0 * GREATEST(cos(radians($1)), 0.01)))
+		   AND similarity(name, $4) > 0.3
+		 ORDER BY (6371 * acos(cos(radians($1)) * cos(radians(latitude)) *
+		           cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) ASC
+		 LIMIT 1`,
+		lat, lng, radiusMeters, name)
 	if err != nil {
 		return nil, err
 	}

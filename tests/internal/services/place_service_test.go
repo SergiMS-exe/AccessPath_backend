@@ -9,7 +9,7 @@ import (
 	"accesspath/internal/models"
 	"accesspath/internal/services"
 	"accesspath/pkg/apperr"
-	"accesspath/pkg/gmaps"
+	"accesspath/pkg/catalog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -23,8 +23,8 @@ type placeSvcDeps struct {
 	repo          *fakes.RepoPlace
 	accSvc        services.AccessibilityService
 	submissionSvc *fakes.SvcSubmission
-	gmaps         *fakes.GmapsClient
-	gmapsLog      *fakes.RepoGmapsLog
+	catalog       *fakes.CatalogProvider
+	links         *fakes.LinkResolver
 }
 
 func newPlaceDeps() placeSvcDeps {
@@ -32,14 +32,22 @@ func newPlaceDeps() placeSvcDeps {
 		repo:          &fakes.RepoPlace{},
 		accSvc:        services.NewAccessibilityService(defaultThresholds()),
 		submissionSvc: &fakes.SvcSubmission{},
-		gmaps:         &fakes.GmapsClient{},
-		gmapsLog:      &fakes.RepoGmapsLog{},
 	}
 }
 
 func newPlaceService(d placeSvcDeps, monthlyLimit int) services.PlaceService {
+	// Un puntero nil pasado directamente a una interfaz no es una interfaz
+	// nil: convertimos explicitamente para poder probar el modo legacy.
+	var provider catalog.Provider
+	if d.catalog != nil {
+		provider = d.catalog
+	}
+	var links services.LinkResolver
+	if d.links != nil {
+		links = d.links
+	}
 	return services.NewPlaceService(
-		d.repo, d.accSvc, d.submissionSvc, d.gmaps, d.gmapsLog, monthlyLimit,
+		d.repo, d.accSvc, d.submissionSvc, provider, links,
 	)
 }
 
@@ -281,136 +289,6 @@ func TestPlaceService_Delete_HappyPath(t *testing.T) {
 	svc := newPlaceService(d, 0)
 
 	err := svc.Delete(context.Background(), 1, 42)
-	require.NoError(t, err)
-}
-
-// --- Search ---------------------------------------------------------------
-
-func TestPlaceService_Search_DelegatesToGmaps(t *testing.T) {
-	d := newPlaceDeps()
-	d.gmaps.AutocompleteFn = func(_ context.Context, q, sess string) ([]gmaps.AutocompleteItem, error) {
-		assert.Equal(t, "cafe", q)
-		return []gmaps.AutocompleteItem{
-			{PlaceID: "p1", Description: "Cafe A", MainText: "A", SecondaryText: "B"},
-		}, nil
-	}
-	svc := newPlaceService(d, 0)
-
-	got, err := svc.Search(context.Background(), "cafe", "")
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, "p1", got[0].PlaceID)
-}
-
-func TestPlaceService_Search_GmapsErrorPropagates(t *testing.T) {
-	d := newPlaceDeps()
-	d.gmaps.AutocompleteFn = func(_ context.Context, _, _ string) ([]gmaps.AutocompleteItem, error) {
-		return nil, apperr.GmapsQuotaExceeded("places.search")
-	}
-	svc := newPlaceService(d, 0)
-
-	_, err := svc.Search(context.Background(), "cafe", "")
-	require.Error(t, err)
-	var ae *apperr.AppError
-	require.True(t, errors.As(err, &ae))
-	assert.Equal(t, http.StatusTooManyRequests, ae.HTTPStatus)
-}
-
-// --- ImportFromGoogle -----------------------------------------------------
-
-func TestPlaceService_ImportFromGoogle_ReturnsExistingIfAlreadyImported(t *testing.T) {
-	d := newPlaceDeps()
-	d.repo.FindByGooglePlaceIDFn = func(_ context.Context, gp string) (*models.Place, error) {
-		return &models.Place{ID: 99, GooglePlaceID: &gp}, nil
-	}
-	svc := newPlaceService(d, 0)
-
-	got, err := svc.ImportFromGoogle(context.Background(), "pid-123", "", 42)
-	require.NoError(t, err)
-	assert.Equal(t, int64(99), got.ID)
-}
-
-func TestPlaceService_ImportFromGoogle_QuotaExceededReturnsSentinel(t *testing.T) {
-	d := newPlaceDeps()
-	d.repo.FindByGooglePlaceIDFn = func(_ context.Context, _ string) (*models.Place, error) {
-		return nil, pgx.ErrNoRows
-	}
-	d.gmapsLog.CountThisMonthFn = func(_ context.Context) (int, error) {
-		return 500, nil
-	}
-	svc := newPlaceService(d, 500) // limit = 500
-
-	_, err := svc.ImportFromGoogle(context.Background(), "pid-123", "", 42)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, services.ErrGmapsQuotaExceeded)
-}
-
-func TestPlaceService_ImportFromGoogle_PermanentlyClosedReturnsSentinel(t *testing.T) {
-	d := newPlaceDeps()
-	d.repo.FindByGooglePlaceIDFn = func(_ context.Context, _ string) (*models.Place, error) {
-		return nil, pgx.ErrNoRows
-	}
-	d.gmapsLog.CountThisMonthFn = func(_ context.Context) (int, error) {
-		return 0, nil
-	}
-	d.gmapsLog.LogFn = func(_ context.Context) error { return nil }
-	d.gmaps.DetailsFn = func(_ context.Context, _, _ string) (*gmaps.PlaceDetails, error) {
-		return &gmaps.PlaceDetails{
-			PlaceID: "pid-123", Name: "X",
-			BusinessStatus: gmaps.BusinessStatusClosedPermanently,
-		}, nil
-	}
-	svc := newPlaceService(d, 500)
-
-	_, err := svc.ImportFromGoogle(context.Background(), "pid-123", "", 42)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, services.ErrPlaceClosedPermanently)
-}
-
-func TestPlaceService_ImportFromGoogle_HappyPath(t *testing.T) {
-	d := newPlaceDeps()
-	d.repo.FindByGooglePlaceIDFn = func(_ context.Context, _ string) (*models.Place, error) {
-		return nil, pgx.ErrNoRows
-	}
-	d.gmapsLog.CountThisMonthFn = func(_ context.Context) (int, error) {
-		return 0, nil
-	}
-	d.gmapsLog.LogFn = func(_ context.Context) error { return nil }
-	d.gmaps.DetailsFn = func(_ context.Context, _, _ string) (*gmaps.PlaceDetails, error) {
-		return &gmaps.PlaceDetails{
-			PlaceID: "pid-123", Name: "Cafe X",
-			FormattedAddress: "Calle 1", Lat: 41.4, Lng: 2.17,
-			BusinessStatus: "OPERATIONAL",
-		}, nil
-	}
-	d.repo.CreateFn = func(_ context.Context, req models.CreatePlaceRequest) (*models.Place, error) {
-		require.NotNil(t, req.GooglePlaceID)
-		return &models.Place{ID: 7, Name: req.Name}, nil
-	}
-	svc := newPlaceService(d, 500)
-
-	got, err := svc.ImportFromGoogle(context.Background(), "pid-123", "", 42)
-	require.NoError(t, err)
-	assert.Equal(t, int64(7), got.ID)
-	assert.Equal(t, "Cafe X", got.Name)
-}
-
-func TestPlaceService_ImportFromGoogle_NoMonthlyLimitSkipsCount(t *testing.T) {
-	// monthlyLimit <= 0 -> el contador no se invoca.
-	d := newPlaceDeps()
-	d.repo.FindByGooglePlaceIDFn = func(_ context.Context, _ string) (*models.Place, error) {
-		return nil, pgx.ErrNoRows
-	}
-	// CountThisMonth queda sin stub: si se invocara, devolveria error y abortaria.
-	d.gmaps.DetailsFn = func(_ context.Context, _, _ string) (*gmaps.PlaceDetails, error) {
-		return &gmaps.PlaceDetails{PlaceID: "pid-123", Name: "X"}, nil
-	}
-	d.repo.CreateFn = func(_ context.Context, _ models.CreatePlaceRequest) (*models.Place, error) {
-		return &models.Place{ID: 1}, nil
-	}
-	svc := newPlaceService(d, 0) // 0 = desactivado
-
-	_, err := svc.ImportFromGoogle(context.Background(), "pid-123", "", 42)
 	require.NoError(t, err)
 }
 

@@ -16,11 +16,11 @@ import (
 // errors.Is/As (Cause).
 type AppError struct {
 	// Op describe la operacion logica donde se origino el error, en notacion
-	// "recurso.accion" (p.ej. "places.search", "gmaps.autocomplete").
+	// "recurso.accion" (p.ej. "places.search", "places.resolve_link").
 	Op string
 
 	// Code es el identificador estable y machine-readable (p.ej.
-	// "gmaps.request_denied", "places.not_found"). NO cambia segun idioma.
+	// "places.catalog_unavailable", "places.not_found"). NO cambia segun idioma.
 	Code string
 
 	// HTTPStatus es el codigo a devolver al cliente (400/401/404/429/500/502/503).
@@ -112,66 +112,11 @@ func TooManyRequests(op string) *AppError {
 		"Demasiadas solicitudes. Vuelve a intentarlo en unos minutos.", nil)
 }
 
-// --- Dominio gmaps ---
-
-// GmapsNotConfigured: API key vacia en el backend. Es un error de
-// configuracion del servidor, no del usuario. 503.
-func GmapsNotConfigured(op string) *AppError {
-	return New(op, "gmaps.not_configured", http.StatusServiceUnavailable,
-		"El buscador no esta disponible. Contacta con el administrador.", nil)
-}
-
-// GmapsRequestDenied: Google devolvio REQUEST_DENIED (key invalida, Places API
-// no habilitada, sin facturacion). Es un problema de configuracion. 502.
-func GmapsRequestDenied(op string, cause error) *AppError {
-	return New(op, "gmaps.request_denied", http.StatusBadGateway,
-		"El buscador de Google no esta disponible ahora mismo.", cause)
-}
-
-// GmapsQuotaExceeded: cuota mensual superada. 429.
-func GmapsQuotaExceeded(op string) *AppError {
-	return New(op, "gmaps.quota_exceeded", http.StatusTooManyRequests,
-		"Has alcanzado el limite mensual de busquedas. Vuelve a intentarlo en unos dias.", nil)
-}
-
-// GmapsInvalidRequest: parametros invalidos hacia Google (input vacio, etc).
-// 502 porque la peticion viene del usuario pero el problema es nuestro.
-func GmapsInvalidRequest(op, detail string) *AppError {
-	return New(op, "gmaps.invalid_request", http.StatusBadGateway,
-		"Busqueda invalida.", fmt.Errorf("detail=%s", detail))
-}
-
-// GmapsUpstream: cualquier otro status de Google (UNKNOWN_ERROR, etc). 502.
-func GmapsUpstream(op, gmapsStatus string, cause error) *AppError {
-	meta := map[string]any{"gmaps_status": gmapsStatus}
-	var c error
-	if cause != nil {
-		c = cause
-	}
-	ae := New(op, "gmaps.upstream_error", http.StatusBadGateway,
-		"El buscador de Google no responde. Intentalo de nuevo.", c)
-	ae.Meta = meta
-	return ae
-}
-
-// GmapsNetwork: fallo de red/DNS/TLS al llamar a Google. 502.
-func GmapsNetwork(op string, cause error) *AppError {
-	return New(op, "gmaps.network_error", http.StatusBadGateway,
-		"No se ha podido conectar con el buscador. Revisa tu conexion.", cause)
-}
-
 // --- Dominio places ---
 
-// PlaceClosedPermanently: sitio cerrado segun Google. 400 (no tiene sentido
-// importarlo).
+// PlaceClosedPermanently: el sitio figura como cerrado definitivamente en el
+// catalogo. 400 (no tiene sentido importarlo).
 func PlaceClosedPermanently() *AppError {
 	return New("places.import", "places.closed_permanently", http.StatusBadRequest,
 		"Este sitio esta cerrado permanentemente.", nil)
-}
-
-// PlaceSearchFailed: fallback cuando el search falla por algo no clasificado.
-// Conserva la causa en el log.
-func PlaceSearchFailed(cause error) *AppError {
-	return New("places.search", "places.search_failed", http.StatusInternalServerError,
-		"No se ha podido realizar la busqueda. Intentalo de nuevo.", cause)
 }

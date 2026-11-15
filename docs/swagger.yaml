@@ -1,5 +1,314 @@
 basePath: /api/v1
 definitions:
+  models.AccessibilityState:
+    enum:
+    - green
+    - yellow
+    - red
+    - no_data
+    type: string
+    x-enum-varnames:
+    - StateGreen
+    - StateYellow
+    - StateRed
+    - StateNoData
+  models.AnswerOption:
+    properties:
+      criterion_id:
+        type: integer
+      exists_value:
+        type: boolean
+      id:
+        type: integer
+      is_unsure:
+        type: boolean
+      label:
+        type: string
+      quality_value:
+        type: integer
+      sort_order:
+        type: integer
+    type: object
+  models.CatalogItem:
+    properties:
+      address:
+        type: string
+      category:
+        type: string
+      city:
+        type: string
+      confidence:
+        type: number
+      country:
+        type: string
+      external_id:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      operating_status:
+        type: string
+      phones:
+        items:
+          type: string
+        type: array
+      postcode:
+        type: string
+      refreshed_at:
+        type: string
+      region:
+        type: string
+      source:
+        type: string
+      subcategory:
+        type: string
+      websites:
+        items:
+          type: string
+        type: array
+    type: object
+  models.Confidence:
+    properties:
+      last_contribution_at:
+        type: string
+      level:
+        description: none | low | medium | high
+        type: string
+      n_defined:
+        type: integer
+      n_unsure:
+        type: integer
+      photo_ratio:
+        type: number
+    type: object
+  models.ContributionRequest:
+    properties:
+      answer_option_id:
+        type: integer
+      criterion_id:
+        type: integer
+      place_id:
+        type: integer
+    required:
+    - answer_option_id
+    - criterion_id
+    - place_id
+    type: object
+  models.ContributionResult:
+    properties:
+      contribution_id:
+        type: integer
+      criterion:
+        $ref: '#/definitions/models.CriterionScore'
+      dimension:
+        $ref: '#/definitions/models.DimensionScore'
+    type: object
+  models.CreateCommunityPlaceRequest:
+    properties:
+      address:
+        type: string
+      category:
+        type: string
+      description:
+        type: string
+      google_ftid:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      source_url:
+        type: string
+    required:
+    - latitude
+    - longitude
+    - name
+    type: object
+  models.Criterion:
+    properties:
+      active:
+        type: boolean
+      code:
+        type: string
+      depends_on_criterion_id:
+        type: integer
+      dimension_id:
+        type: integer
+      id:
+        type: integer
+      is_blocking:
+        type: boolean
+      is_starter:
+        type: boolean
+      key:
+        type: string
+      profile_tags:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      sort_order:
+        type: integer
+      weight:
+        type: integer
+    type: object
+  models.CriterionDetail:
+    properties:
+      active:
+        type: boolean
+      code:
+        type: string
+      depends_on_criterion_id:
+        type: integer
+      dimension_id:
+        type: integer
+      id:
+        type: integer
+      is_blocking:
+        type: boolean
+      is_starter:
+        type: boolean
+      key:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/models.AnswerOption'
+        type: array
+      profile_tags:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      sort_order:
+        type: integer
+      weight:
+        type: integer
+    type: object
+  models.CriterionScore:
+    properties:
+      confidence:
+        $ref: '#/definitions/models.Confidence'
+      conflict:
+        type: boolean
+      criterion_id:
+        type: integer
+      is_blocking:
+        type: boolean
+      key:
+        type: string
+      n_no:
+        type: integer
+      n_unsure:
+        type: integer
+      n_yes:
+        type: integer
+      profile_tags:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      quality_p50:
+        type: number
+      state:
+        $ref: '#/definitions/models.AccessibilityState'
+    type: object
+  models.DimensionDetail:
+    properties:
+      active:
+        type: boolean
+      code:
+        type: string
+      criteria:
+        items:
+          $ref: '#/definitions/models.CriterionDetail'
+        type: array
+      description:
+        type: string
+      id:
+        type: integer
+      key:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  models.DimensionScore:
+    properties:
+      conflict:
+        type: boolean
+      criteria:
+        items:
+          $ref: '#/definitions/models.CriterionScore'
+        type: array
+      dimension_id:
+        type: integer
+      key:
+        type: string
+      name:
+        type: string
+      state:
+        $ref: '#/definitions/models.AccessibilityState'
+    type: object
+  models.ImportFromCatalogRequest:
+    properties:
+      external_id:
+        type: string
+      place_id:
+        type: integer
+      source:
+        type: string
+    type: object
+  models.NextQuestionResponse:
+    properties:
+      criterion:
+        $ref: '#/definitions/models.Criterion'
+      options:
+        items:
+          $ref: '#/definitions/models.AnswerOption'
+        type: array
+    type: object
+  models.Photo:
+    properties:
+      code:
+        type: string
+      contribution_id:
+        type: integer
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      id:
+        type: integer
+      object_key:
+        type: string
+      submission_id:
+        type: integer
+      suggested_slot:
+        type: string
+      url:
+        type: string
+    type: object
+  models.PhotoInput:
+    properties:
+      contribution_id:
+        type: integer
+      data:
+        description: base64
+        type: string
+      suggested_slot:
+        type: string
+    required:
+    - data
+    type: object
   models.Place:
     properties:
       address:
@@ -14,15 +323,232 @@ definitions:
         type: string
       description:
         type: string
+      external_id:
+        description: ExternalID es el id del sitio en el proveedor de origen (GERS
+          id, place id).
+        type: string
+      google_ftid:
+        description: |-
+          GoogleFTID es el feature id del enlace de Google; se guarda como
+          trazabilidad y para futuras comprobaciones, no para deduplicar.
+        type: string
       id:
         type: integer
       latitude:
         type: number
       longitude:
         type: number
+      moderation_status:
+        description: 'ModerationStatus: verified | pending | rejected.'
+        type: string
       name:
         type: string
+      published:
+        description: Published significa "tiene datos de accesibilidad" (NO es moderacion).
+        type: boolean
+      source:
+        description: 'Source indica el origen del dato: ''overture'' o ''community''.'
+        type: string
+      source_url:
+        description: SourceURL es el enlace que aporto el usuario, si lo hubo.
+        type: string
       updated_at:
+        type: string
+    type: object
+  models.PlaceMapItem:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        type: string
+      description:
+        type: string
+      dimensions:
+        items:
+          $ref: '#/definitions/models.DimensionScore'
+        type: array
+      external_id:
+        description: ExternalID es el id del sitio en el proveedor de origen (GERS
+          id, place id).
+        type: string
+      google_ftid:
+        description: |-
+          GoogleFTID es el feature id del enlace de Google; se guarda como
+          trazabilidad y para futuras comprobaciones, no para deduplicar.
+        type: string
+      id:
+        type: integer
+      latitude:
+        type: number
+      longitude:
+        type: number
+      moderation_status:
+        description: 'ModerationStatus: verified | pending | rejected.'
+        type: string
+      name:
+        type: string
+      overall_state:
+        $ref: '#/definitions/models.AccessibilityState'
+      published:
+        description: Published significa "tiene datos de accesibilidad" (NO es moderacion).
+        type: boolean
+      source:
+        description: 'Source indica el origen del dato: ''overture'' o ''community''.'
+        type: string
+      source_url:
+        description: SourceURL es el enlace que aporto el usuario, si lo hubo.
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.PlacePrefill:
+    properties:
+      address:
+        type: string
+      category:
+        type: string
+      google_ftid:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      name:
+        type: string
+      source_url:
+        type: string
+    type: object
+  models.PlaceSearchItem:
+    properties:
+      address:
+        type: string
+      category:
+        type: string
+      description:
+        type: string
+      distance_meters:
+        type: number
+      external_id:
+        type: string
+      latitude:
+        type: number
+      local_place_id:
+        description: LocalPlaceID se rellena si el sitio ya existe en nuestra tabla
+          place.
+        type: integer
+      longitude:
+        type: number
+      main_text:
+        type: string
+      place_id:
+        type: string
+      secondary_text:
+        type: string
+      source:
+        type: string
+    type: object
+  models.ProfileRequest:
+    properties:
+      consent:
+        type: boolean
+      needs:
+        items:
+          type: string
+        type: array
+    required:
+    - consent
+    type: object
+  models.ProfileResponse:
+    properties:
+      consent_at:
+        type: string
+      has_consent:
+        type: boolean
+      needs:
+        items:
+          type: string
+        type: array
+    type: object
+  models.ResolveLinkRequest:
+    properties:
+      url:
+        type: string
+    required:
+    - url
+    type: object
+  models.ResolvedLink:
+    properties:
+      catalog:
+        $ref: '#/definitions/models.CatalogItem'
+      matched:
+        type: boolean
+      message:
+        description: Message explica por que no hubo match (util para la UI).
+        type: string
+      prefill:
+        $ref: '#/definitions/models.PlacePrefill'
+    type: object
+  models.Submission:
+    properties:
+      code:
+        type: string
+      comment:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      id:
+        type: integer
+      place_id:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  models.SubmissionRequest:
+    properties:
+      comment:
+        type: string
+      photos:
+        items:
+          $ref: '#/definitions/models.PhotoInput'
+        type: array
+      place_id:
+        type: integer
+    required:
+    - place_id
+    type: object
+  models.SubmissionWithDetails:
+    properties:
+      code:
+        type: string
+      comment:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
+        type: string
+      id:
+        type: integer
+      photos:
+        items:
+          $ref: '#/definitions/models.Photo'
+        type: array
+      place_id:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      username:
         type: string
     type: object
 host: localhost:8080
@@ -33,6 +559,269 @@ info:
   title: AccessPath API
   version: "1.0"
 paths:
+  /contributions:
+    post:
+      consumes:
+      - application/json
+      description: Contribucion atomica; user_id del token. Devuelve el semaforo en
+        vivo.
+      parameters:
+      - description: Contribucion
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ContributionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.ContributionResult'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Crear contribucion
+      tags:
+      - contributions
+  /contributions/{id}:
+    delete:
+      description: Soft delete + recalculo. Solo el propietario.
+      parameters:
+      - description: ID de la contribucion
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.ContributionResult'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Deshacer contribucion
+      tags:
+      - contributions
+  /dimensions:
+    get:
+      description: Dimensiones con sus criterios, opciones y depends_on. Reemplaza
+        /categories.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.DimensionDetail'
+              type: array
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Catalogo del formulario
+      tags:
+      - catalog
+  /me/profile:
+    delete:
+      description: Borra necesidades y retira el consentimiento.
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: Borrar perfil funcional
+      tags:
+      - profile
+    get:
+      description: Necesidades funcionales + estado de consentimiento del usuario.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.ProfileResponse'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Perfil funcional
+      tags:
+      - profile
+    put:
+      consumes:
+      - application/json
+      description: Set de necesidades + consentimiento explicito (opt-in). Requiere
+        consent=true.
+      parameters:
+      - description: Perfil
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.ProfileResponse'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Fijar perfil funcional
+      tags:
+      - profile
+  /places/{id}/next-question:
+    get:
+      description: Devuelve el criterio de mayor valor para (place, user); vacio si
+        nada util.
+      parameters:
+      - description: ID del lugar
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.NextQuestionResponse'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Siguiente pregunta
+      tags:
+      - contributions
+  /places/{id}/submissions:
+    get:
+      description: '"Que cuenta la gente": submissions (comentario + fotos).'
+      parameters:
+      - description: ID del lugar
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.SubmissionWithDetails'
+              type: array
+            type: object
+      summary: Comentarios y fotos de un lugar
+      tags:
+      - submissions
+  /places/community:
+    post:
+      consumes:
+      - application/json
+      description: 'Crea el sitio que el usuario no encontro en el catalogo. Nace
+        con moderation_status=pending: no aparece en el mapa ni en el buscador hasta
+        que se verifica. Si ya existe un lugar parecido a menos de 50 m devuelve el
+        existente con 200.'
+      parameters:
+      - description: datos del sitio
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateCommunityPlaceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.Place'
+            type: object
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.Place'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Crea un lugar comunitario pendiente de moderacion
+      tags:
+      - places
+  /places/from-catalog:
+    post:
+      consumes:
+      - application/json
+      description: Copia a la base local una ficha del catalogo (Overture Maps). Idempotente
+        por (source, external_id). Si se envia place_id devuelve ese lugar local ya
+        existente.
+      parameters:
+      - description: source + external_id, o place_id
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ImportFromCatalogRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.Place'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Importa un lugar del catalogo externo
+      tags:
+      - places
   /places/map:
     get:
       description: Retorna los lugares dentro de un bounding box definido por esquina
@@ -58,10 +847,6 @@ paths:
         name: max_lng
         required: true
         type: number
-      - description: Filtrar por categoría
-        in: query
-        name: category_id
-        type: integer
       - default: 100
         description: Máximo de resultados
         in: query
@@ -75,7 +860,7 @@ paths:
           schema:
             additionalProperties:
               items:
-                $ref: '#/definitions/models.Place'
+                $ref: '#/definitions/models.PlaceMapItem'
               type: array
             type: object
         "400":
@@ -93,6 +878,120 @@ paths:
       summary: Lugares en el mapa
       tags:
       - places
+  /places/resolve-link:
+    post:
+      consumes:
+      - application/json
+      description: Extrae nombre, coordenadas y ftid de un enlace compartido por el
+        usuario y busca el sitio en el catalogo. No descarga la ficha de Google ni
+        usa su API.
+      parameters:
+      - description: url del enlace
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.ResolveLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.ResolvedLink'
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Lee un enlace de Google Maps
+      tags:
+      - places
+  /places/search:
+    get:
+      description: Busca en el catalogo local (Overture Maps) y en los lugares ya
+        verificados.
+      parameters:
+      - description: Texto a buscar (minimo 3 caracteres)
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: Latitud del usuario (opcional, anade distancia)
+        in: query
+        name: lat
+        type: number
+      - description: Longitud del usuario (opcional, anade distancia)
+        in: query
+        name: lng
+        type: number
+      - default: 10
+        description: Maximo de resultados
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/models.PlaceSearchItem'
+              type: array
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Busca lugares por texto
+      tags:
+      - places
+  /submissions:
+    put:
+      consumes:
+      - application/json
+      description: get-or-create de la valoracion viva del usuario para el lugar;
+        fija comentario y/o adjunta fotos. user_id del token.
+      parameters:
+      - description: Submission
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/models.SubmissionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/models.Submission'
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Guardar valoracion (comentario/fotos)
+      tags:
+      - submissions
 securityDefinitions:
   BearerAuth:
     description: 'Ingresa el token JWT con el prefijo "Bearer ". Ejemplo: "Bearer
